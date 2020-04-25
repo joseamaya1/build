@@ -27,22 +27,22 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v141</PlatformToolset>
+    <PlatformToolset>v142</PlatformToolset>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v141</PlatformToolset>
+    <PlatformToolset>v142</PlatformToolset>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v141</PlatformToolset>
+    <PlatformToolset>v142</PlatformToolset>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v141</PlatformToolset>
+    <PlatformToolset>v142</PlatformToolset>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
@@ -153,7 +153,6 @@
     <ClCompile Include="..\src\events.cpp" />
     <ClCompile Include="..\src\fileloader.cpp" />
     <ClCompile Include="..\src\game.cpp" />
-	<ClCompile Include="..\src\gameworldconfig.cpp" />
     <ClCompile Include="..\src\gamestore.cpp" />
     <ClCompile Include="..\src\globalevent.cpp" />
     <ClCompile Include="..\src\groups.cpp" />
@@ -191,12 +190,12 @@
     <ClCompile Include="..\src\party.cpp" />
     <ClCompile Include="..\src\player.cpp" />
     <ClCompile Include="..\src\position.cpp" />
+    <ClCompile Include="..\src\prey.cpp" />
     <ClCompile Include="..\src\protocol.cpp" />
     <ClCompile Include="..\src\protocolgame.cpp" />
     <ClCompile Include="..\src\protocollogin.cpp" />
     <ClCompile Include="..\src\protocolold.cpp" />
     <ClCompile Include="..\src\protocolstatus.cpp" />
-    <ClCompile Include="..\src\quests.cpp" />
     <ClCompile Include="..\src\raids.cpp" />
     <ClCompile Include="..\src\reward.cpp" />
     <ClCompile Include="..\src\rewardchest.cpp" />
@@ -219,6 +218,7 @@
     <ClCompile Include="..\src\waitlist.cpp" />
     <ClCompile Include="..\src\weapons.cpp" />
     <ClCompile Include="..\src\wildcardtree.cpp" />
+    <ClCompile Include="..\src\xtea.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="TheForgottenServer.rc" />
@@ -248,7 +248,6 @@
     <ClInclude Include="..\src\enums.h" />
     <ClInclude Include="..\src\events.h" />
     <ClInclude Include="..\src\fileloader.h" />
-	<ClInclude Include="..\src\gameworldconfig.h" />
     <ClInclude Include="..\src\game.h" />
     <ClInclude Include="..\src\gamestore.h" />
     <ClInclude Include="..\src\globalevent.h" />
@@ -283,13 +282,13 @@
     <ClInclude Include="..\src\party.h" />
     <ClInclude Include="..\src\player.h" />
     <ClInclude Include="..\src\position.h" />
+    <ClInclude Include="..\src\prey.h" />
     <ClInclude Include="..\src\protocol.h" />
     <ClInclude Include="..\src\protocolgame.h" />
     <ClInclude Include="..\src\protocollogin.h" />
     <ClInclude Include="..\src\protocolold.h" />
     <ClInclude Include="..\src\protocolstatus.h" />
     <ClInclude Include="..\src\pugicast.h" />
-    <ClInclude Include="..\src\quests.h" />
     <ClInclude Include="..\src\raids.h" />
     <ClInclude Include="..\src\reward.h" />
     <ClInclude Include="..\src\rewardchest.h" />
@@ -314,6 +313,7 @@
     <ClInclude Include="..\src\waitlist.h" />
     <ClInclude Include="..\src\weapons.h" />
     <ClInclude Include="..\src\wildcardtree.h" />
+    <ClInclude Include="..\src\xtea.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
