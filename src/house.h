@@ -1,6 +1,8 @@
 /**
+ * @file house.h
+ * 
  * The Forgotten Server - a free and open-source MMORPG server emulator
- * Copyright (C) 2019  Mark Samman <mark.samman@gmail.com>
+ * Copyright (C) 2019 Mark Samman <mark.samman@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,12 +19,10 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#ifndef FS_HOUSE_H_EB9732E7771A438F9CD0EFA8CB4C58C4
-#define FS_HOUSE_H_EB9732E7771A438F9CD0EFA8CB4C58C4
+#ifndef OT_SRC_HOUSE_H_
+#define OT_SRC_HOUSE_H_
 
 #include <regex>
-#include <set>
-#include <unordered_set>
 
 #include "container.h"
 #include "housetile.h"
@@ -38,7 +38,7 @@ class AccessList
 		void parseList(const std::string& list);
 		void addPlayer(const std::string& name);
 		void addGuild(const std::string& name);
-		void addGuildRank(const std::string& name, const std::string& rankName);
+		void addGuildRank(const std::string& name, const std::string& guildName);
 		void addExpression(const std::string& expression);
 
 		bool isInList(const Player* player);
@@ -62,10 +62,10 @@ class Door final : public Item
 		Door(const Door&) = delete;
 		Door& operator=(const Door&) = delete;
 
-		Door* getDoor() override {
+		Door* getDoor() final {
 			return this;
 		}
-		const Door* getDoor() const override {
+		const Door* getDoor() const final {
 			return this;
 		}
 
@@ -74,8 +74,8 @@ class Door final : public Item
 		}
 
 		//serialization
-		Attr_ReadValue readAttr(AttrTypes_t attr, PropStream& propStream) override;
-		void serializeAttr(PropWriteStream&) const override {}
+		Attr_ReadValue readAttr(AttrTypes_t attr, PropStream& propStream) final;
+		void serializeAttr(PropWriteStream&) const final {}
 
 		void setDoorId(uint32_t doorId) {
 			setIntAttr(ITEM_ATTRIBUTE_DOORID, doorId);
@@ -89,11 +89,12 @@ class Door final : public Item
 		void setAccessList(const std::string& textlist);
 		bool getAccessList(std::string& list) const;
 
-		void onRemoved() override;
+		void onRemoved() final;
 
-	private:
+	protected:
 		void setHouse(House* house);
 
+	private:
 		House* house = nullptr;
 		std::unique_ptr<AccessList> accessList;
 		friend class House;
@@ -119,14 +120,14 @@ class HouseTransferItem final : public Item
 	public:
 		static HouseTransferItem* createHouseTransferItem(House* house);
 
-		explicit HouseTransferItem(House* house) : Item(0), house(house) {}
+		explicit HouseTransferItem(House* newHouse) : Item(0), house(newHouse) {}
 
-		void onTradeEvent(TradeEvents_t event, Player* owner) override;
-		bool canTransform() const override {
+		void onTradeEvent(TradeEvents_t event, Player* owner) final;
+		bool canTransform() const final {
 			return false;
 		}
 
-	private:
+	protected:
 		House* house;
 };
 
@@ -157,8 +158,8 @@ class House
 			return posEntry;
 		}
 
-		void setName(std::string houseName) {
-			this->houseName = houseName;
+		void setName(std::string newHouseName) {
+			this->houseName = newHouseName;
 		}
 		const std::string& getName() const {
 			return houseName;
@@ -176,8 +177,8 @@ class House
 			return paidUntil;
 		}
 
-		void setRent(uint32_t rent) {
-			this->rent = rent;
+		void setRent(uint32_t newRent) {
+			this->rent = newRent;
 		}
 		uint32_t getRent() const {
 			return rent;
@@ -190,8 +191,8 @@ class House
 			return rentWarnings;
 		}
 
-		void setTownId(uint32_t townId) {
-			this->townId = townId;
+		void setTownId(uint32_t newTownId) {
+			this->townId = newTownId;
 		}
 		uint32_t getTownId() const {
 			return townId;
@@ -208,14 +209,14 @@ class House
 
 		HouseTransferItem* getTransferItem();
 		void resetTransferItem();
-		bool executeTransfer(HouseTransferItem* item, Player* newOwner);
+		bool executeTransfer(HouseTransferItem* item, Player* player);
 
 		const HouseTileList& getTiles() const {
 			return houseTiles;
 		}
 
-		const std::set<Door*>& getDoors() const {
-			return doorSet;
+		const std::list<Door*>& getDoors() const {
+			return doorList;
 		}
 
 		void addBed(BedItem* bed);
@@ -236,7 +237,7 @@ class House
 		Container transfer_container{ITEM_LOCKER1};
 
 		HouseTileList houseTiles;
-		std::set<Door*> doorSet;
+		std::list<Door*> doorList;
 		HouseBedItemList bedsList;
 
 		std::string houseName;

@@ -1,6 +1,8 @@
 /**
+ * @file networkmessage.cpp
+ * 
  * The Forgotten Server - a free and open-source MMORPG server emulator
- * Copyright (C) 2019  Mark Samman <mark.samman@gmail.com>
+ * Copyright (C) 2019 Mark Samman <mark.samman@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,6 +26,14 @@
 #include "container.h"
 #include "creature.h"
 
+int32_t NetworkMessage::decodeHeader()
+{
+	int32_t newSize = buffer[0] | buffer[1] << 8;
+	info.length = newSize;
+	return info.length;
+}
+
+/******************************************************************************/
 std::string NetworkMessage::getString(uint16_t stringLen/* = 0*/)
 {
 	if (stringLen == 0) {
@@ -47,6 +57,7 @@ Position NetworkMessage::getPosition()
 	pos.z = getByte();
 	return pos;
 }
+/******************************************************************************/
 
 void NetworkMessage::addString(const std::string& value)
 {

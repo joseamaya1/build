@@ -1,6 +1,8 @@
 /**
+ * @file combat.h
+ * 
  * The Forgotten Server - a free and open-source MMORPG server emulator
- * Copyright (C) 2019  Mark Samman <mark.samman@gmail.com>
+ * Copyright (C) 2019 Mark Samman <mark.samman@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,8 +19,8 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#ifndef FS_COMBAT_H_B02CE79230FC43708699EE91FCC8F7CC
-#define FS_COMBAT_H_B02CE79230FC43708699EE91FCC8F7CC
+#ifndef OT_SRC_COMBAT_H_
+#define OT_SRC_COMBAT_H_
 
 #include "thing.h"
 #include "condition.h"
@@ -35,10 +37,10 @@ struct Position;
 class ValueCallback final : public CallBack
 {
 	public:
-		explicit ValueCallback(formulaType_t type): type(type) {}
+		explicit ValueCallback(formulaType_t initType): type(initType) {}
 		void getMinMaxValues(Player* player, CombatDamage& damage, bool useCharges) const;
 
-	private:
+	protected:
 		formulaType_t type;
 };
 
@@ -46,12 +48,18 @@ class TileCallback final : public CallBack
 {
 	public:
 		void onTileCombat(Creature* creature, Tile* tile) const;
+
+	protected:
+		formulaType_t type;
 };
 
 class TargetCallback final : public CallBack
 {
 	public:
 		void onTargetCombat(Creature* creature, Creature* target) const;
+
+	protected:
+		formulaType_t type;
 };
 
 struct CombatParams {
@@ -82,7 +90,7 @@ using CombatFunction = std::function<void(Creature*, Creature*, const CombatPara
 class MatrixArea
 {
 	public:
-		MatrixArea(uint32_t rows, uint32_t cols): centerX(0), centerY(0), rows(rows), cols(cols) {
+		MatrixArea(uint32_t initRows, uint32_t initCols): centerX(0), centerY(0), rows(initRows), cols(initCols) {
 			data_ = new bool*[rows];
 
 			for (uint32_t row = 0; row < rows; ++row) {
@@ -152,7 +160,7 @@ class MatrixArea
 			return data_[i];
 		}
 
-	private:
+	protected:
 		uint32_t centerX;
 		uint32_t centerY;
 
@@ -182,7 +190,7 @@ class AreaCombat
 		void setupExtArea(const std::list<uint32_t>& list, uint32_t rows);
 		void clear();
 
-	private:
+	protected:
 		enum MatrixOperation_t {
 			MATRIXOPERATION_COPY,
 			MATRIXOPERATION_MIRROR,
@@ -193,7 +201,7 @@ class AreaCombat
 		};
 
 		MatrixArea* createArea(const std::list<uint32_t>& list, uint32_t rows);
-		static void copyArea(const MatrixArea* input, MatrixArea* output, MatrixOperation_t op);
+		void copyArea(const MatrixArea* input, MatrixArea* output, MatrixOperation_t op) const;
 
 		MatrixArea* getArea(const Position& centerPos, const Position& targetPos) const {
 			int32_t dx = Position::getOffsetX(targetPos, centerPos);
@@ -269,14 +277,14 @@ class Combat
 		static void addDistanceEffect(Creature* caster, const Position& fromPos, const Position& toPos, uint8_t effect);
 
 		void doCombat(Creature* caster, Creature* target) const;
-		void doCombat(Creature* caster, const Position& position) const;
+		void doCombat(Creature* caster, const Position& pos) const;
 
 		bool setCallback(CallBackParam_t key);
 		CallBack* getCallback(CallBackParam_t key);
 
 		bool setParam(CombatParam_t param, uint32_t value);
-		void setArea(AreaCombat* area) {
-			this->area.reset(area);
+		void setArea(AreaCombat* newArea) {
+			this->area.reset(newArea);
 		}
 		bool hasArea() const {
 			return area != nullptr;
@@ -293,7 +301,7 @@ class Combat
 			params.origin = origin;
 		}
 
-	private:
+	protected:
 		static void doCombatDefault(Creature* caster, Creature* target, const CombatParams& params);
 
 		static void CombatFunc(Creature* caster, const Position& pos, const AreaCombat* area, const CombatParams& params, CombatFunction func, CombatDamage* data);
@@ -304,7 +312,7 @@ class Combat
 		static void CombatDispelFunc(Creature* caster, Creature* target, const CombatParams& params, CombatDamage* data);
 		static void CombatNullFunc(Creature* caster, Creature* target, const CombatParams& params, CombatDamage* data);
 
-		static void combatTileEffects(const SpectatorVector& spectators, Creature* caster, Tile* tile, const CombatParams& params);
+		static void combatTileEffects(const SpectatorHashSet& spectators, Creature* caster, Tile* tile, const CombatParams& params);
 		CombatDamage getCombatDamage(Creature* creature, Creature* target) const;
 
 		//configureable
@@ -325,10 +333,10 @@ class MagicField final : public Item
 	public:
 		explicit MagicField(uint16_t type) : Item(type), createTime(OTSYS_TIME()) {}
 
-		MagicField* getMagicField() override {
+		MagicField* getMagicField() final {
 			return this;
 		}
-		const MagicField* getMagicField() const override {
+		const MagicField* getMagicField() const final {
 			return this;
 		}
 

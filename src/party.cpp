@@ -1,6 +1,8 @@
 /**
+ * @file party.cpp
+ * 
  * The Forgotten Server - a free and open-source MMORPG server emulator
- * Copyright (C) 2019  Mark Samman <mark.samman@gmail.com>
+ * Copyright (C) 2019 Mark Samman <mark.samman@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,7 +30,7 @@ extern Game g_game;
 extern ConfigManager g_config;
 extern Events* g_events;
 
-Party::Party(Player* leader) : leader(leader)
+Party::Party(Player* initLeader) : leader(initLeader)
 {
 	leader->setParty(this);
 }
@@ -347,19 +349,19 @@ void Party::updateSharedExperience()
 	}
 }
 
-bool Party::setSharedExperience(Player* player, bool sharedExpActive)
+bool Party::setSharedExperience(Player* player, bool newSharedExpActive)
 {
 	if (!player || leader != player) {
 		return false;
 	}
 
-	if (this->sharedExpActive == sharedExpActive) {
+	if (this->sharedExpActive == newSharedExpActive) {
 		return true;
 	}
 
-	this->sharedExpActive = sharedExpActive;
+	this->sharedExpActive = newSharedExpActive;
 
-	if (sharedExpActive) {
+	if (newSharedExpActive) {
 		this->sharedExpEnabled = canEnableSharedExperience();
 
 		if (this->sharedExpEnabled) {
@@ -379,7 +381,6 @@ void Party::shareExperience(uint64_t experience, Creature* source/* = nullptr*/)
 {
 	uint64_t shareExperience = experience;
 	g_events->eventPartyOnShareExperience(this, shareExperience);
-
 	for (Player* member : memberList) {
 		member->onGainSharedExperience(shareExperience, source);
 	}

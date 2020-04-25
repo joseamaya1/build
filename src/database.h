@@ -1,6 +1,8 @@
 /**
+ * @file database.h
+ * 
  * The Forgotten Server - a free and open-source MMORPG server emulator
- * Copyright (C) 2019  Mark Samman <mark.samman@gmail.com>
+ * Copyright (C) 2019 Mark Samman <mark.samman@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,8 +19,8 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#ifndef FS_DATABASE_H_A484B0CDFDE542838F506DCE3D40C693
-#define FS_DATABASE_H_A484B0CDFDE542838F506DCE3D40C693
+#ifndef OT_SRC_DATABASE_H_
+#define OT_SRC_DATABASE_H_
 
 #include <boost/lexical_cast.hpp>
 
@@ -36,6 +38,17 @@ class Database
 		// non-copyable
 		Database(const Database&) = delete;
 		Database& operator=(const Database&) = delete;
+
+		/**
+		 * Singleton implementation.
+		 *
+		 * @return database connection handler singleton
+		 */
+		static Database& getInstance()
+		{
+			static Database instance;
+			return instance;
+		}
 
 		/**
 		 * Connects to the database
@@ -106,7 +119,7 @@ class Database
 			return maxPacketSize;
 		}
 
-	private:
+	protected:
 		/**
 		 * Transaction related methods.
 		 *
@@ -118,6 +131,7 @@ class Database
 		bool rollback();
 		bool commit();
 
+	private:
 		MYSQL* handle = nullptr;
 		std::recursive_mutex databaseLock;
 		uint64_t maxPacketSize = 1048576;
@@ -148,11 +162,25 @@ class DBResult
 				return static_cast<T>(0);
 			}
 
-			T data;
+			T data = { 0 };
 			try {
 				data = boost::lexical_cast<T>(row[it->second]);
-			} catch (boost::bad_lexical_cast&) {
-				data = 0;
+			}
+			catch (boost::bad_lexical_cast&) {
+				// overflow; tries to get it as uint64 (as big as possible);
+				uint64_t u64data;
+				try {
+					u64data = boost::lexical_cast<uint64_t>(row[it->second]);
+					if (u64data > 0) {
+						// is a valid! thus truncate into int max for data type;
+						data = std::numeric_limits<T>::max();
+					}
+				}
+				catch (boost::bad_lexical_cast &e) {
+					// invalid! discard value.
+					std::cout << "[Error - DBResult::getNumber] Column '" << s << "' has an invalid value set: " << e.what() << std::endl;
+					data = 0;
+				}
 			}
 			return data;
 		}
@@ -178,13 +206,12 @@ class DBResult
 class DBInsert
 {
 	public:
-		explicit DBInsert(Database* dtb, std::string query);
+		explicit DBInsert(std::string query);
 		bool addRow(const std::string& row);
 		bool addRow(std::ostringstream& row);
 		bool execute();
 
-	private:
-		Database* dtb;
+	protected:
 		std::string query;
 		std::string values;
 		size_t length;
@@ -193,12 +220,11 @@ class DBInsert
 class DBTransaction
 {
 	public:
-		explicit DBTransaction(Database* dtb) {
-			this->dtb = dtb;
-		}
+		constexpr DBTransaction() = default;
+
 		~DBTransaction() {
 			if (state == STATE_START) {
-				dtb->rollback();
+				Database::getInstance().rollback();
 			}
 		}
 
@@ -208,7 +234,7 @@ class DBTransaction
 
 		bool begin() {
 			state = STATE_START;
-			return dtb->beginTransaction();
+			return Database::getInstance().beginTransaction();
 		}
 
 		bool commit() {
@@ -217,7 +243,7 @@ class DBTransaction
 			}
 
 			state = STATE_COMMIT;
-			return dtb->commit();
+			return Database::getInstance().commit();
 		}
 
 	private:
@@ -227,10 +253,7 @@ class DBTransaction
 			STATE_COMMIT,
 		};
 
-		Database* dtb;
 		TransactionStates_t state = STATE_NO_START;
 };
-
-extern Database g_database;
 
 #endif

@@ -1,6 +1,8 @@
 /**
+ * @file npc.cpp
+ * 
  * The Forgotten Server - a free and open-source MMORPG server emulator
- * Copyright (C) 2019  Mark Samman <mark.samman@gmail.com>
+ * Copyright (C) 2019 Mark Samman <mark.samman@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -53,9 +55,9 @@ Npc* Npc::createNpc(const std::string& name)
 	return npc.release();
 }
 
-Npc::Npc(const std::string& name) :
+Npc::Npc(const std::string& initName) :
 	Creature(),
-	filename("data/npc/" + name + ".xml"),
+	filename("data/npc/" + initName + ".xml"),
 	npcEventHandler(nullptr),
 	masterRadius(-1),
 	loaded(false)
@@ -99,7 +101,6 @@ void Npc::reset()
 {
 	loaded = false;
 	walkTicks = 1500;
-	pushable = true;
 	floorChange = false;
 	attackable = false;
 	ignoreHeight = true;
@@ -154,16 +155,14 @@ bool Npc::loadFromXml()
 		baseSpeed = 100;
 	}
 
-	if ((attr = npcNode.attribute("pushable"))) {
-		pushable = attr.as_bool();
-	}
-
 	if ((attr = npcNode.attribute("walkinterval"))) {
 		walkTicks = pugi::cast<uint32_t>(attr.value());
 	}
 
 	if ((attr = npcNode.attribute("walkradius"))) {
 		masterRadius = pugi::cast<int32_t>(attr.value());
+	} else {
+		masterRadius = 2;
 	}
 
 	if ((attr = npcNode.attribute("ignoreheight"))) {
@@ -286,7 +285,7 @@ void Npc::onRemoveCreature(Creature* creature, bool isLogout)
 }
 
 void Npc::onCreatureMove(Creature* creature, const Tile* newTile, const Position& newPos,
-                         const Tile* oldTile, const Position& oldPos, bool teleport)
+						 const Tile* oldTile, const Position& oldPos, bool teleport)
 {
 	Creature::onCreatureMove(creature, newTile, newPos, oldTile, oldPos, teleport);
 
@@ -359,7 +358,7 @@ void Npc::doSayToPlayer(Player* player, const std::string& text)
 }
 
 void Npc::onPlayerTrade(Player* player, int32_t callback, uint16_t itemId, uint8_t count,
-                        uint8_t amount, bool ignore/* = false*/, bool inBackpacks/* = false*/)
+						uint8_t amount, bool ignore/* = false*/, bool inBackpacks/* = false*/)
 {
 	if (npcEventHandler) {
 		npcEventHandler->onPlayerTrade(player, callback, itemId, count, amount, ignore, inBackpacks);
@@ -392,7 +391,7 @@ bool Npc::getNextStep(Direction& dir, uint32_t& flags)
 		return true;
 	}
 
-	if (walkTicks == 0) {
+	if (walkTicks <= 0) {
 		return false;
 	}
 
@@ -439,16 +438,16 @@ bool Npc::canWalkTo(const Position& fromPos, Direction dir) const
 		return false;
 	}
 
-	Tile* tile = g_game.map.getTile(toPos);
-	if (!tile || tile->queryAdd(0, *this, 1, 0) != RETURNVALUE_NOERROR) {
+	Tile* toTile = g_game.map.getTile(toPos);
+	if (!toTile || toTile->queryAdd(0, *this, 1, 0) != RETURNVALUE_NOERROR) {
 		return false;
 	}
 
-	if (!floorChange && (tile->hasFlag(TILESTATE_FLOORCHANGE) || tile->getTeleportItem())) {
+	if (!floorChange && (toTile->hasFlag(TILESTATE_FLOORCHANGE) || toTile->getTeleportItem())) {
 		return false;
 	}
 
-	if (!ignoreHeight && tile->hasHeight(1)) {
+	if (!ignoreHeight && toTile->hasHeight(1)) {
 		return false;
 	}
 
@@ -484,10 +483,10 @@ bool Npc::getRandomStep(Direction& dir) const
 	return true;
 }
 
-void Npc::doMoveTo(const Position& pos)
+void Npc::doMoveTo(const Position& target)
 {
-	std::vector<Direction> listDir;
-	if (getPathTo(pos, listDir, 1, 1, true, true)) {
+	std::forward_list<Direction> listDir;
+	if (getPathTo(target, listDir, 1, 1, true, true)) {
 		startAutoWalk(listDir);
 	}
 }
@@ -1086,8 +1085,8 @@ int NpcScriptInterface::luaNpcCloseShopWindow(lua_State* L)
 	return 1;
 }
 
-NpcEventsHandler::NpcEventsHandler(const std::string& file, Npc* npc) :
-	npc(npc), scriptInterface(npc->getScriptInterface())
+NpcEventsHandler::NpcEventsHandler(const std::string& file, Npc* npcEvent) :
+	npc(npcEvent), scriptInterface(npcEvent->getScriptInterface())
 {
 	loaded = scriptInterface->loadFile("data/npc/scripts/" + file, npc) == 0;
 	if (!loaded) {
@@ -1118,7 +1117,6 @@ void NpcEventsHandler::onCreatureAppear(Creature* creature)
 	//onCreatureAppear(creature)
 	if (!scriptInterface->reserveScriptEnv()) {
 		std::cout << "[Error - NpcScript::onCreatureAppear] Call stack overflow" << std::endl;
-		return;
 	}
 
 	ScriptEnvironment* env = scriptInterface->getScriptEnv();
@@ -1205,8 +1203,8 @@ void NpcEventsHandler::onCreatureSay(Creature* creature, SpeakClasses type, cons
 	scriptInterface->callFunction(3);
 }
 
-void NpcEventsHandler::onPlayerTrade(Player* player, int32_t callback, uint16_t itemId,
-                              uint8_t count, uint8_t amount, bool ignore, bool inBackpacks)
+void NpcEventsHandler::onPlayerTrade(Player* player, int32_t callback, uint16_t itemid,
+							  uint8_t count, uint8_t amount, bool ignore, bool inBackpacks)
 {
 	if (callback == -1) {
 		return;
@@ -1226,7 +1224,7 @@ void NpcEventsHandler::onPlayerTrade(Player* player, int32_t callback, uint16_t 
 	LuaScriptInterface::pushCallback(L, callback);
 	LuaScriptInterface::pushUserdata<Player>(L, player);
 	LuaScriptInterface::setMetatable(L, -1, "Player");
-	lua_pushnumber(L, itemId);
+	lua_pushnumber(L, itemid);
 	lua_pushnumber(L, count);
 	lua_pushnumber(L, amount);
 	LuaScriptInterface::pushBoolean(L, ignore);

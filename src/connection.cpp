@@ -1,6 +1,8 @@
 /**
+ * @file connection.cpp
+ * 
  * The Forgotten Server - a free and open-source MMORPG server emulator
- * Copyright (C) 2019  Mark Samman <mark.samman@gmail.com>
+ * Copyright (C) 2019 Mark Samman <mark.samman@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,6 +25,7 @@
 #include "connection.h"
 #include "outputmessage.h"
 #include "protocol.h"
+#include "protocolgame.h"
 #include "scheduler.h"
 #include "server.h"
 
@@ -67,10 +70,7 @@ void Connection::close(bool force)
 	ConnectionManager::getInstance().releaseConnection(shared_from_this());
 
 	std::lock_guard<std::recursive_mutex> lockClass(connectionLock);
-	if (connectionState == CONNECTION_STATE_CLOSED) {
-		return;
-	}
-	connectionState = CONNECTION_STATE_CLOSED;
+	connectionState = CONNECTION_STATE_DISCONNECTED;
 
 	if (protocol) {
 		g_dispatcher.addTask(
@@ -104,107 +104,38 @@ Connection::~Connection()
 	closeSocket();
 }
 
-void Connection::accept(Protocol_ptr protocol)
+void Connection::accept(Protocol_ptr conProtocol)
 {
-	this->connectionState = CONNECTION_STATE_IDENTIFYING;
-	this->protocol = protocol;
+	this->protocol = conProtocol;
 	g_dispatcher.addTask(createTask(std::bind(&Protocol::onConnect, protocol)));
+	connectionState = CONNECTION_STATE_CONNECTING_STAGE2;
 
-	std::lock_guard<std::recursive_mutex> lockClass(connectionLock);
-	try {
-		readTimer.expires_from_now(boost::posix_time::seconds(CONNECTION_READ_TIMEOUT));
-		readTimer.async_wait(std::bind(&Connection::handleTimeout, std::weak_ptr<Connection>(shared_from_this()), std::placeholders::_1));
-
-		// Read header bytes to identify if it is proxy identification
-		boost::asio::async_read(socket,
-								boost::asio::buffer(msg.getBuffer(), NetworkMessage::HEADER_LENGTH),
-								std::bind(&Connection::parseProxyIdentification, shared_from_this(), std::placeholders::_1));
-	}
-	catch (boost::system::system_error& e) {
-		std::cout << "[Network error - Connection::accept] " << e.what() << std::endl;
-		close(FORCE_CLOSE);
-	}
+	accept();
 }
 
 void Connection::accept()
 {
+	if (connectionState == CONNECTION_STATE_PENDING) {
+		connectionState = CONNECTION_STATE_CONNECTING_STAGE1;
+	}
 	std::lock_guard<std::recursive_mutex> lockClass(connectionLock);
 	try {
 		readTimer.expires_from_now(boost::posix_time::seconds(CONNECTION_READ_TIMEOUT));
 		readTimer.async_wait(std::bind(&Connection::handleTimeout, std::weak_ptr<Connection>(shared_from_this()), std::placeholders::_1));
 
-		// Read size of the first packet
-		boost::asio::async_read(socket,
-		                        boost::asio::buffer(msg.getBuffer(), NetworkMessage::HEADER_LENGTH),
-		                        std::bind(&Connection::parseHeader, shared_from_this(), std::placeholders::_1));
+		if (!receivedLastChar && receivedName && connectionState == CONNECTION_STATE_CONNECTING_STAGE2) {
+			// Read size of the first packet
+			boost::asio::async_read(socket,
+				boost::asio::buffer(msg.getBuffer(), 1),
+				std::bind(&Connection::parseHeader, shared_from_this(), std::placeholders::_1));
+		} else {
+			// Read size of the first packet
+			boost::asio::async_read(socket,
+				boost::asio::buffer(msg.getBuffer(), NetworkMessage::HEADER_LENGTH),
+				std::bind(&Connection::parseHeader, shared_from_this(), std::placeholders::_1));
+		}
 	} catch (boost::system::system_error& e) {
 		std::cout << "[Network error - Connection::accept] " << e.what() << std::endl;
-		close(FORCE_CLOSE);
-	}
-}
-
-void Connection::parseProxyIdentification(const boost::system::error_code& error)
-{
-	std::lock_guard<std::recursive_mutex> lockClass(connectionLock);
-	readTimer.cancel();
-
-	if (error) {
-		close(FORCE_CLOSE);
-		return;
-	} else if (connectionState == CONNECTION_STATE_CLOSED) {
-		return;
-	}
-
-	uint8_t* msgBuffer = msg.getBuffer();
-	std::string serverName = g_config.getString(ConfigManager::SERVER_NAME) + "\n";
-	if (connectionState == CONNECTION_STATE_IDENTIFYING) {
-		if (msgBuffer[1] == 0x00 || strncasecmp(reinterpret_cast<char*>(msgBuffer), &serverName[0], 2) != 0) {
-			//Probably not proxy identification so let's try standard parsing method
-			connectionState = CONNECTION_STATE_OPEN;
-			parseHeader(error);
-			return;
-		} else {
-			size_t remainder = serverName.length()-2;
-			if (remainder > 0) {
-				connectionState = CONNECTION_STATE_READINGS;
-				try {
-					readTimer.expires_from_now(boost::posix_time::seconds(CONNECTION_READ_TIMEOUT));
-					readTimer.async_wait(std::bind(&Connection::handleTimeout, std::weak_ptr<Connection>(shared_from_this()), std::placeholders::_1));
-
-					// Read the remainder of proxy identification
-					boost::asio::async_read(socket,
-											boost::asio::buffer(msg.getBuffer(), remainder),
-											std::bind(&Connection::parseProxyIdentification, shared_from_this(), std::placeholders::_1));
-				}
-				catch (boost::system::system_error& e) {
-					std::cout << "[Network error - Connection::parseProxyIdentification] " << e.what() << std::endl;
-					close(FORCE_CLOSE);
-				}
-				return;
-			} else {
-				connectionState = CONNECTION_STATE_OPEN;
-			}
-		}
-	} else if (connectionState == CONNECTION_STATE_READINGS) {
-		size_t remainder = serverName.length()-2;
-		if (strncasecmp(reinterpret_cast<char*>(msgBuffer), &serverName[2], remainder) == 0) {
-			connectionState = CONNECTION_STATE_OPEN;
-		} else {
-			close(FORCE_CLOSE);
-			return;
-		}
-	}
-
-	try {
-		readTimer.expires_from_now(boost::posix_time::seconds(CONNECTION_READ_TIMEOUT));
-		readTimer.async_wait(std::bind(&Connection::handleTimeout, std::weak_ptr<Connection>(shared_from_this()), std::placeholders::_1));
-
-		// Wait to the next packet
-		boost::asio::async_read(socket,
-		                        boost::asio::buffer(msg.getBuffer(), NetworkMessage::HEADER_LENGTH),
-		                        std::bind(&Connection::parseHeader, shared_from_this(), std::placeholders::_1));
-	} catch (boost::system::system_error& e) {
-		std::cout << "[Network error - Connection::parseProxyIdentification] " << e.what() << std::endl;
 		close(FORCE_CLOSE);
 	}
 }
@@ -217,20 +148,66 @@ void Connection::parseHeader(const boost::system::error_code& error)
 	if (error) {
 		close(FORCE_CLOSE);
 		return;
-	} else if (connectionState == CONNECTION_STATE_CLOSED) {
+	} else if (connectionState == CONNECTION_STATE_DISCONNECTED) {
 		return;
 	}
 
 	uint32_t timePassed = std::max<uint32_t>(1, (time(nullptr) - timeConnected) + 1);
 	if ((++packetsSent / timePassed) > static_cast<uint32_t>(g_config.getNumber(ConfigManager::MAX_PACKETS_PER_SECOND))) {
-		std::cout << convertIPToString(getIP()) << " disconnected for exceeding packet per second limit." << std::endl;
-		close();
-		return;
+		const auto client = std::dynamic_pointer_cast<ProtocolGame>(protocol);
+		if (client) {
+			std::cout << convertIPToString(getIP()) << " disconnected for exceeding packet per second limit." << std::endl;
+			close();
+			return;
+		}
+	}
+
+	if (!receivedLastChar && connectionState == CONNECTION_STATE_CONNECTING_STAGE2) {
+		uint8_t* msgBuffer = msg.getBuffer();
+
+		if (!receivedName && msgBuffer[1] == 0x00) {
+			receivedLastChar = true;
+		} else {
+			std::string serverName = g_config.getString(ConfigManager::SERVER_NAME) + "\n";
+
+			if (!receivedName) {
+				if ((char)msgBuffer[0] == serverName[0] && (char)msgBuffer[1] == serverName[1]) {
+					receivedName = true;
+					serverNameTime = 1;
+
+					accept();
+					return;
+				} else {
+					std::cout << "[Network error - Connection::parseHeader] Invalid Client Login" << std::endl;
+					close(FORCE_CLOSE);
+					return;
+				}
+			}
+			++serverNameTime;
+
+			if ((char)msgBuffer[0] == serverName[serverNameTime]) {
+				if (msgBuffer[0] == 0x0A) {
+					receivedLastChar = true;
+				}
+
+				accept();
+				return;
+			} else {
+				std::cout << "[Network error - Connection::parseHeader] Invalid Client Login" << std::endl;
+				close(FORCE_CLOSE);
+				return;
+			}
+		}
+	}
+
+	if (receivedLastChar && connectionState == CONNECTION_STATE_CONNECTING_STAGE2) {
+		connectionState = CONNECTION_STATE_GAME;
 	}
 
 	if (timePassed > 2) {
 		timeConnected = time(nullptr);
 		packetsSent = 0;
+		checksumsMap.clear();
 	}
 
 	uint16_t size = msg.getLengthHeader();
@@ -241,13 +218,13 @@ void Connection::parseHeader(const boost::system::error_code& error)
 
 	try {
 		readTimer.expires_from_now(boost::posix_time::seconds(CONNECTION_READ_TIMEOUT));
-		readTimer.async_wait(std::bind(&Connection::handleTimeout, std::weak_ptr<Connection>(shared_from_this()), std::placeholders::_1));
+		readTimer.async_wait(std::bind(&Connection::handleTimeout, std::weak_ptr<Connection>(shared_from_this()),
+			std::placeholders::_1));
 
 		// Read packet content
 		msg.setLength(size + NetworkMessage::HEADER_LENGTH);
-		boost::asio::async_read(socket,
-								boost::asio::buffer(msg.getBodyBuffer(), size),
-		                        std::bind(&Connection::parsePacket, shared_from_this(), std::placeholders::_1));
+		boost::asio::async_read(socket, boost::asio::buffer(msg.getBodyBuffer(), size),
+			std::bind(&Connection::parsePacket, shared_from_this(), std::placeholders::_1));
 	} catch (boost::system::system_error& e) {
 		std::cout << "[Network error - Connection::parseHeader] " << e.what() << std::endl;
 		close(FORCE_CLOSE);
@@ -262,8 +239,14 @@ void Connection::parsePacket(const boost::system::error_code& error)
 	if (error) {
 		close(FORCE_CLOSE);
 		return;
-	} else if (connectionState == CONNECTION_STATE_CLOSED) {
+	} else if (connectionState == CONNECTION_STATE_DISCONNECTED) {
 		return;
+	}
+
+	//Check packet
+	uint32_t recvPacket = msg.get<uint32_t>();
+	if ((recvPacket & 1 << 31) != 0) {
+		//std::cout << "CCompress" << std::endl;
 	}
 
 	if (!receivedFirst) {
@@ -271,75 +254,85 @@ void Connection::parsePacket(const boost::system::error_code& error)
 		receivedFirst = true;
 
 		if (!protocol) {
-			//Check packet checksum
-			uint32_t checksum;
-			int32_t len = msg.getLength() - msg.getBufferPosition() - NetworkMessage::CHECKSUM_LENGTH;
-			if (len > 0) {
-				checksum = adlerChecksum(msg.getBuffer() + msg.getBufferPosition() + NetworkMessage::CHECKSUM_LENGTH, len);
-			} else {
-				checksum = 0;
-			}
-
-			uint32_t recvChecksum = msg.get<uint32_t>();
-			if (recvChecksum != checksum) {
-				// it might not have been the checksum, step back
-				msg.skipBytes(-NetworkMessage::CHECKSUM_LENGTH);
+			// As of 11.11+ update, we need to check if it's a outdated client or a status client server with this ugly check
+			if (msg.getLength() < 280) {
+				msg.skipBytes(-NetworkMessage::CHECKSUM_LENGTH); //those 32bits read up there
 			}
 
 			// Game protocol has already been created at this point
-			protocol = service_port->make_protocol(recvChecksum == checksum, msg, shared_from_this());
+			protocol = service_port->make_protocol(true, msg, shared_from_this());
 			if (!protocol) {
 				close(FORCE_CLOSE);
 				return;
 			}
 		} else {
-			msg.get<uint32_t>();
-			msg.skipBytes(1);    // Skip protocol ID
+			msg.skipBytes(1); // Skip protocol ID
 		}
 
 		protocol->onRecvFirstMessage(msg);
 	} else {
-		protocol->onRecvMessage(msg);    // Send the packet to the current protocol
+		if(detectAttack(recvPacket)) {
+			std::cout << "[Network protection] - attack detected. IP: ["<< convertIPToString(getIP())<< "] - disconnected" << std::endl;
+			close(FORCE_CLOSE);
+		} else {
+			protocol->onRecvMessage(msg); // Send the packet to the current protocol
+		}
 	}
 
 	try {
 		readTimer.expires_from_now(boost::posix_time::seconds(CONNECTION_READ_TIMEOUT));
-		readTimer.async_wait(std::bind(&Connection::handleTimeout, std::weak_ptr<Connection>(shared_from_this()), std::placeholders::_1));
+		readTimer.async_wait(std::bind(&Connection::handleTimeout, std::weak_ptr<Connection>(shared_from_this()),
+			std::placeholders::_1));
 
 		// Wait to the next packet
 		boost::asio::async_read(socket,
-		                        boost::asio::buffer(msg.getBuffer(), NetworkMessage::HEADER_LENGTH),
-		                        std::bind(&Connection::parseHeader, shared_from_this(), std::placeholders::_1));
+			boost::asio::buffer(msg.getBuffer(), NetworkMessage::HEADER_LENGTH),
+			std::bind(&Connection::parseHeader, shared_from_this(), std::placeholders::_1));
 	} catch (boost::system::system_error& e) {
 		std::cout << "[Network error - Connection::parsePacket] " << e.what() << std::endl;
 		close(FORCE_CLOSE);
 	}
 }
 
-void Connection::send(const OutputMessage_ptr& msg)
+bool Connection::detectAttack(const uint32_t currentPacketChecksum) { // jlcvp(Leu) - detect packet replication attack
+	const auto it = checksumsMap.find(currentPacketChecksum);
+	if(it == checksumsMap.end()){ //element doesn't exists
+		checksumsMap.insert(std::make_pair(currentPacketChecksum, 1));
+	} else {
+        it->second += 1; //increase ocurrencies
+	    if(it->second > (uint32_t)g_config.getNumber(ConfigManager::NETWORK_ATTACK_THRESHOLD)) {
+            return true;
+        }
+	}
+
+	return false;
+}
+
+void Connection::send(const OutputMessage_ptr& conMsg)
 {
 	std::lock_guard<std::recursive_mutex> lockClass(connectionLock);
-	if (connectionState == CONNECTION_STATE_CLOSED) {
+	if (connectionState == CONNECTION_STATE_DISCONNECTED) {
 		return;
 	}
 
 	bool noPendingWrite = messageQueue.empty();
-	messageQueue.emplace_back(msg);
+	messageQueue.emplace_back(conMsg);
 	if (noPendingWrite) {
-		internalSend(msg);
+		internalSend(conMsg);
 	}
 }
 
-void Connection::internalSend(const OutputMessage_ptr& msg)
+void Connection::internalSend(const OutputMessage_ptr& conMsg)
 {
-	protocol->onSendMessage(msg);
+	protocol->onSendMessage(conMsg);
 	try {
 		writeTimer.expires_from_now(boost::posix_time::seconds(CONNECTION_WRITE_TIMEOUT));
-		writeTimer.async_wait(std::bind(&Connection::handleTimeout, std::weak_ptr<Connection>(shared_from_this()), std::placeholders::_1));
+		writeTimer.async_wait(std::bind(&Connection::handleTimeout, std::weak_ptr<Connection>(shared_from_this()),
+			std::placeholders::_1));
 
 		boost::asio::async_write(socket,
-		                         boost::asio::buffer(msg->getOutputBuffer(), msg->getLength()),
-		                         std::bind(&Connection::onWriteOperation, shared_from_this(), std::placeholders::_1));
+			boost::asio::buffer(conMsg->getOutputBuffer(), conMsg->getLength()),
+			std::bind(&Connection::onWriteOperation, shared_from_this(), std::placeholders::_1));
 	} catch (boost::system::system_error& e) {
 		std::cout << "[Network error - Connection::internalSend] " << e.what() << std::endl;
 		close(FORCE_CLOSE);
@@ -374,7 +367,7 @@ void Connection::onWriteOperation(const boost::system::error_code& error)
 
 	if (!messageQueue.empty()) {
 		internalSend(messageQueue.front());
-	} else if (connectionState == CONNECTION_STATE_CLOSED) {
+	} else if (connectionState == CONNECTION_STATE_DISCONNECTED) {
 		closeSocket();
 	}
 }

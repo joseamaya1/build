@@ -1,6 +1,8 @@
 /**
+ * @file protocolgame.h
+ * 
  * The Forgotten Server - a free and open-source MMORPG server emulator
- * Copyright (C) 2019  Mark Samman <mark.samman@gmail.com>
+ * Copyright (C) 2019 Mark Samman <mark.samman@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,13 +19,14 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#ifndef FS_PROTOCOLGAME_H_FACA2A2D1A9348B78E8FD7E8003EBB87
-#define FS_PROTOCOLGAME_H_FACA2A2D1A9348B78E8FD7E8003EBB87
+#ifndef OT_SRC_PROTOCOLGAME_H_
+#define OT_SRC_PROTOCOLGAME_H_
 
 #include "protocol.h"
 #include "chat.h"
 #include "creature.h"
 #include "tasks.h"
+#include "gamestore.h"
 
 class NetworkMessage;
 class Player;
@@ -50,7 +53,7 @@ struct TextMessage
 	} primary, secondary;
 
 	TextMessage() = default;
-	TextMessage(MessageClasses type, std::string text) : type(type), text(std::move(text)) {}
+	TextMessage(MessageClasses initType, std::string initText) : type(initType), text(std::move(initText)) {}
 };
 
 class ProtocolGame final : public Protocol
@@ -64,16 +67,17 @@ class ProtocolGame final : public Protocol
 			return "gameworld protocol";
 		}
 
-		explicit ProtocolGame(Connection_ptr connection) : Protocol(connection) {}
+		explicit ProtocolGame(Connection_ptr initConnection) : Protocol(initConnection) {}
 
-		void login(const std::string& name, uint32_t accountId, OperatingSystem_t operatingSystem);
+		void login(const std::string& name, uint32_t accnumber, OperatingSystem_t operatingSystem);
 		void logout(bool displayEffect, bool forced);
+
+		void AddItem(NetworkMessage& msg, const Item* item);
+		void AddItem(NetworkMessage& msg, uint16_t id, uint8_t count);
 
 		uint16_t getVersion() const {
 			return version;
 		}
-
-		static NetworkMessage playermsg;
 
 	private:
 		ProtocolGame_ptr getThis() {
@@ -83,7 +87,7 @@ class ProtocolGame final : public Protocol
 		void disconnectClient(const std::string& message) const;
 		void writeToOutputBuffer(const NetworkMessage& msg);
 
-		void release() override;
+		void release() final;
 
 		void checkCreatureAsKnown(uint32_t id, bool& known, uint32_t& removedKnown);
 
@@ -92,31 +96,23 @@ class ProtocolGame final : public Protocol
 		bool canSee(const Position& pos) const;
 
 		// we have all the parse methods
-		void parsePacket(NetworkMessage& msg) override;
-		void onRecvFirstMessage(NetworkMessage& msg) override;
-		void onConnect() override;
+		void parsePacket(NetworkMessage& msg) final;
+		void onRecvFirstMessage(NetworkMessage& msg) final;
+		void onConnect() final;
 
 		//Parse methods
 		void parseAutoWalk(NetworkMessage& msg);
 		void parseSetOutfit(NetworkMessage& msg);
 		void parseSay(NetworkMessage& msg);
-		void parseWrapableItem(NetworkMessage& msg);
 		void parseLookAt(NetworkMessage& msg);
 		void parseLookInBattleList(NetworkMessage& msg);
 		void parseFightModes(NetworkMessage& msg);
 		void parseAttack(NetworkMessage& msg);
 		void parseFollow(NetworkMessage& msg);
-		void parseEquipObject(NetworkMessage& msg);
-
-		void parseCyclopediaMonsters(NetworkMessage& msg);
-		void parseCyclopediaRace(NetworkMessage& msg);
-		void parseCyclopediaCharacterInfo(NetworkMessage& msg);
-
-		void parseTournamentLeaderboard(NetworkMessage& msg);
 
 		void parseBugReport(NetworkMessage& msg);
 		void parseDebugAssert(NetworkMessage& msg);
-		void parseRuleViolationReport(NetworkMessage& msg);
+		void parseRuleViolationReport(NetworkMessage &msg);
 
 		void parseThrow(NetworkMessage& msg);
 		void parseUseItemEx(NetworkMessage& msg);
@@ -142,6 +138,11 @@ class ProtocolGame final : public Protocol
 
 		void parseToggleMount(NetworkMessage& msg);
 
+		// Imbuements
+		void parseApplyImbuemente(NetworkMessage& msg);
+		void parseClearingImbuement(NetworkMessage& msg);
+		void parseCloseImbuingWindow(NetworkMessage& msg);
+
 		void parseModalWindowAnswer(NetworkMessage& msg);
 
 		void parseBrowseField(NetworkMessage& msg);
@@ -164,6 +165,7 @@ class ProtocolGame final : public Protocol
 		void parseEditVip(NetworkMessage& msg);
 
 		void parseRotateItem(NetworkMessage& msg);
+		void parseWrapableItem(NetworkMessage& msg);
 
 		//Channel tabs
 		void parseChannelInvite(NetworkMessage& msg);
@@ -171,6 +173,15 @@ class ProtocolGame final : public Protocol
 		void parseOpenChannel(NetworkMessage& msg);
 		void parseOpenPrivateChannel(NetworkMessage& msg);
 		void parseCloseChannel(NetworkMessage& msg);
+
+		//Store methods
+		void parseStoreOpen(NetworkMessage &message);
+		void parseStoreRequestOffers(NetworkMessage &message);
+		void parseStoreBuyOffer(NetworkMessage &message);
+		void parseCoinTransfer(NetworkMessage &msg);
+
+		// imbue info
+		void addImbuementInfo(NetworkMessage &msg, uint32_t imbuid);
 
 		//Send functions
 		void sendChannelMessage(const std::string& author, const std::string& text, SpeakClasses type, uint16_t channel);
@@ -182,8 +193,10 @@ class ProtocolGame final : public Protocol
 		void sendOpenPrivateChannel(const std::string& receiver);
 		void sendToChannel(const Creature* creature, SpeakClasses type, const std::string& text, uint16_t channelId);
 		void sendPrivateMessage(const Player* speaker, SpeakClasses type, const std::string& text);
-		void sendIcons(uint32_t icons);
+		void sendIcons(uint16_t icons);
 		void sendFYIBox(const std::string& message);
+
+		void sendImbuementWindow(Item* item);
 
 		void sendDistanceShoot(const Position& from, const Position& to, uint8_t type);
 		void sendMagicEffect(const Position& pos, uint8_t type);
@@ -191,10 +204,17 @@ class ProtocolGame final : public Protocol
 		void sendSkills();
 		void sendPing();
 		void sendPingBack();
-		void sendCreatureTurn(const Creature* creature, uint32_t stackPos);
+		void sendCreatureTurn(const Creature* creature, uint32_t stackpos);
 		void sendCreatureSay(const Creature* creature, SpeakClasses type, const std::string& text, const Position* pos = nullptr);
 
+		// Unjust Panel
+		void sendUnjustifiedPoints(const uint8_t& dayProgress, const uint8_t& dayLeft, const uint8_t& weekProgress, const uint8_t& weekLeft, const uint8_t& monthProgress, const uint8_t& monthLeft, const uint8_t& skullDuration);
+
+		// Send preyInfo
+		void sendPreyData();
+
 		void sendQuestLog();
+		void sendQuestTracker();
 		void sendQuestLine(const Quest* quest);
 
 		void sendCancelWalk();
@@ -203,34 +223,12 @@ class ProtocolGame final : public Protocol
 		void sendCreatureOutfit(const Creature* creature, const Outfit_t& outfit);
 		void sendStats();
 		void sendBasicData();
-		void sendBlessStatus();
-		void sendPremiumTrigger();
-		void sendClientCheck();
-		void sendGameNews();
+		void sendStoreHighlight();
 		void sendTextMessage(const TextMessage& message);
 		void sendReLoginWindow(uint8_t unfairFightReduction);
 
 		void sendTutorial(uint8_t tutorialId);
 		void sendAddMarker(const Position& pos, uint8_t markType, const std::string& desc);
-
-		void sendMonsterCyclopedia();
-		void sendCyclopediaMonsters(const std::string& race);
-		void sendCyclopediaRace(uint16_t monsterId);
-		void sendCyclopediaBonusEffects();
-		void sendCyclopediaCharacterBaseInformation();
-		void sendCyclopediaCharacterGeneralStats();
-		void sendCyclopediaCharacterCombatStats();
-		void sendCyclopediaCharacterRecentDeaths();
-		void sendCyclopediaCharacterRecentPvPKills();
-		void sendCyclopediaCharacterAchievements();
-		void sendCyclopediaCharacterItemSummary();
-		void sendCyclopediaCharacterOutfitsMounts();
-		void sendCyclopediaCharacterStoreSummary();
-		void sendCyclopediaCharacterInspection();
-		void sendCyclopediaCharacterBadges();
-		void sendCyclopediaCharacterTitles();
-
-		void sendTournamentLeaderboard();
 
 		void sendCreatureWalkthrough(const Creature* creature, bool walkthrough);
 		void sendCreatureShield(const Creature* creature);
@@ -240,8 +238,12 @@ class ProtocolGame final : public Protocol
 
 		void sendShop(Npc* npc, const ShopInfoList& itemList);
 		void sendCloseShop();
+		void sendClientCheck();
+		void sendGameNews();
+		void sendResourceBalance(uint64_t money, uint64_t bank);
 		void sendSaleItemList(const std::list<ShopInfo>& shop);
 		void sendMarketEnter(uint32_t depotId);
+		void updateCoinBalance();
 		void sendMarketLeave();
 		void sendMarketBrowseItem(uint16_t itemId, const MarketOfferList& buyOffers, const MarketOfferList& sellOffers);
 		void sendMarketAcceptOffer(const MarketOfferEx& offer);
@@ -259,18 +261,30 @@ class ProtocolGame final : public Protocol
 
 		void sendUpdatedVIPStatus(uint32_t guid, VipStatus_t newStatus);
 		void sendVIP(uint32_t guid, const std::string& name, const std::string& description, uint32_t icon, bool notify, VipStatus_t status);
-		void sendVIPEntries();
+
+		void sendPendingStateEntered();
+		void sendEnterWorld();
 
 		void sendFightModes();
 
 		void sendCreatureLight(const Creature* creature);
-		void sendWorldLight(LightInfo lightInfo);
-		void sendTibiaTime(int32_t time);
+		void sendWorldLight(const LightInfo& lightInfo);
 
 		void sendCreatureSquare(const Creature* creature, SquareColor_t color);
 
 		void sendSpellCooldown(uint8_t spellId, uint32_t time);
 		void sendSpellGroupCooldown(SpellGroup_t groupId, uint32_t time);
+
+		void sendCoinBalance();
+
+		void sendOpenStore(uint8_t serviceType);
+		void sendStoreCategoryOffers(StoreCategory* category);
+		void sendStoreError(GameStoreError_t error, const std::string& message);
+		void sendStorePurchaseSuccessful(const std::string& message, const uint32_t coinBalance);
+		void sendStoreRequestAdditionalInfo(uint32_t offerId, ClientOffer_t clientOfferType);
+		void sendStoreTrasactionHistory(HistoryStoreOfferList& list, uint32_t page, uint8_t entriesPerPage);
+		void parseStoreOpenTransactionHistory(NetworkMessage &msg);
+		void parseStoreRequestTransactionHistory(NetworkMessage &msg);
 
 		//tiles
 		void sendMapDescription(const Position& pos);
@@ -282,7 +296,7 @@ class ProtocolGame final : public Protocol
 
 		void sendAddCreature(const Creature* creature, const Position& pos, int32_t stackpos, bool isLogin);
 		void sendMoveCreature(const Creature* creature, const Position& newPos, int32_t newStackPos,
-		                      const Position& oldPos, int32_t oldStackPos, bool teleport);
+							  const Position& oldPos, int32_t oldStackPos, bool teleport);
 
 		//containers
 		void sendAddContainerItem(uint8_t cid, uint16_t slot, const Item* item);
@@ -293,42 +307,48 @@ class ProtocolGame final : public Protocol
 		void sendCloseContainer(uint8_t cid);
 
 		//inventory
+		void sendInventoryClientIds();
 		void sendInventoryItem(slots_t slot, const Item* item);
-		void sendItems();
 
 		//messages
 		void sendModalWindow(const ModalWindow& modalWindow);
 
+		//analyzers
+   		void sendKillTrackerUpdate(Container* corpse, const std::string& name, const Outfit_t creatureOutfit);
+   		void sendUpdateSupplyTracker(const Item* item);
+ 		void sendUpdateImpactTracker(int32_t quantity, bool isHeal);
+ 		void sendUpdateLootTracker(Item* item);
+
 		//Help functions
 
 		// translate a tile to clientreadable format
-		void GetTileDescription(const Tile* tile);
+		void GetTileDescription(const Tile* tile, NetworkMessage& msg);
 
 		// translate a floor to clientreadable format
-		void GetFloorDescription(int32_t x, int32_t y, int32_t z, int32_t width, int32_t height, int32_t offset, int32_t& skip);
+		void GetFloorDescription(NetworkMessage& msg, int32_t x, int32_t y, int32_t z,
+		                         int32_t width, int32_t height, int32_t offset, int32_t& skip);
 
 		// translate a map area to clientreadable format
-		void GetMapDescription(int32_t x, int32_t y, int32_t z, int32_t width, int32_t height);
+		void GetMapDescription(int32_t x, int32_t y, int32_t z,
+		                       int32_t width, int32_t height, NetworkMessage& msg);
 
-		void AddCreature(const Creature* creature, bool known, uint32_t remove);
-		void AddPlayerStats();
-		void AddOutfit(const Outfit_t& outfit, bool addMount = true);
-		void AddPlayerSkills();
-		void AddWorldLight(LightInfo lightInfo);
-		void AddCreatureLight(const Creature* creature);
+		void AddCreature(NetworkMessage& msg, const Creature* creature, bool known, uint32_t remove);
+		void AddPlayerStats(NetworkMessage& msg);
+		void AddOutfit(NetworkMessage& msg, const Outfit_t& outfit);
+		void AddPlayerSkills(NetworkMessage& msg);
+		void sendBlessStatus();
+		void sendPremiumTrigger();
+		void AddWorldLight(NetworkMessage& msg, LightInfo lightInfo);
+		void AddCreatureLight(NetworkMessage& msg, const Creature* creature);
 
 		//tiles
-		void RemoveTileThing(const Position& pos, uint32_t stackpos);
+		static void RemoveTileThing(NetworkMessage& msg, const Position& pos, uint32_t stackpos);
 
-		void MoveUpCreature(const Creature* creature, const Position& newPos, const Position& oldPos);
-		void MoveDownCreature(const Creature* creature, const Position& newPos, const Position& oldPos);
+		void MoveUpCreature(NetworkMessage& msg, const Creature* creature, const Position& newPos, const Position& oldPos);
+		void MoveDownCreature(NetworkMessage& msg, const Creature* creature, const Position& newPos, const Position& oldPos);
 
 		//shop
-		void AddShopItem(const ShopInfo& item);
-
-		//items
-		void AddItem(uint16_t id, uint8_t count);
-		void AddItem(const Item* item);
+		void AddShopItem(NetworkMessage& msg, const ShopInfo& item);
 
 		//otclient
 		void parseExtendedOpcode(NetworkMessage& msg);
@@ -352,12 +372,17 @@ class ProtocolGame final : public Protocol
 		uint32_t eventConnect = 0;
 		uint32_t challengeTimestamp = 0;
 		uint16_t version = CLIENT_VERSION_MIN;
+		uint32_t clientVersion = 0;
 
 		uint8_t challengeRandom = 0;
 
-		bool addExivaRestrictions = false;
 		bool debugAssertSent = false;
 		bool acceptPackets = false;
+
+		bool loggedIn = false;
+		bool shouldAddExivaRestrictions = false;
+
+		void sendInventory();
 };
 
 #endif

@@ -1,6 +1,8 @@
 /**
+ * @file database.cpp
+ * 
  * The Forgotten Server - a free and open-source MMORPG server emulator
- * Copyright (C) 2019  Mark Samman <mark.samman@gmail.com>
+ * Copyright (C) 2019 Mark Samman <mark.samman@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -245,9 +247,8 @@ bool DBResult::next()
 	return row != nullptr;
 }
 
-DBInsert::DBInsert(Database* dtb, std::string query) : query(std::move(query))
+DBInsert::DBInsert(std::string insertQuery) : query(std::move(insertQuery))
 {
-	this->dtb = dtb;
 	this->length = this->query.length();
 }
 
@@ -256,7 +257,7 @@ bool DBInsert::addRow(const std::string& row)
 	// adds new row to buffer
 	const size_t rowLength = row.length();
 	length += rowLength;
-	if (length > dtb->getMaxPacketSize() && !execute()) {
+	if (length > Database::getInstance().getMaxPacketSize() && !execute()) {
 		return false;
 	}
 
@@ -289,7 +290,7 @@ bool DBInsert::execute()
 	}
 
 	// executes buffer
-	bool res = dtb->executeQuery(query + values);
+	bool res = Database::getInstance().executeQuery(query + values);
 	values.clear();
 	length = query.length();
 	return res;

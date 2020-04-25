@@ -1,6 +1,8 @@
 /**
+ * @file raids.cpp
+ * 
  * The Forgotten Server - a free and open-source MMORPG server emulator
- * Copyright (C) 2019  Mark Samman <mark.samman@gmail.com>
+ * Copyright (C) 2019 Mark Samman <mark.samman@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -315,19 +317,19 @@ bool AnnounceEvent::configureRaidEvent(const pugi::xml_node& eventNode)
 	pugi::xml_attribute typeAttribute = eventNode.attribute("type");
 	if (typeAttribute) {
 		std::string tmpStrValue = asLowerCaseString(typeAttribute.as_string());
-		if (!tfs_strcmp(tmpStrValue.c_str(), "warning")) {
+		if (tmpStrValue == "warning") {
 			messageType = MESSAGE_STATUS_WARNING;
-		} else if (!tfs_strcmp(tmpStrValue.c_str(), "event")) {
+		} else if (tmpStrValue == "event") {
 			messageType = MESSAGE_EVENT_ADVANCE;
-		} else if (!tfs_strcmp(tmpStrValue.c_str(), "default")) {
+		} else if (tmpStrValue == "default") {
 			messageType = MESSAGE_EVENT_DEFAULT;
-		} else if (!tfs_strcmp(tmpStrValue.c_str(), "description")) {
+		} else if (tmpStrValue == "description") {
 			messageType = MESSAGE_INFO_DESCR;
-		} else if (!tfs_strcmp(tmpStrValue.c_str(), "smallstatus")) {
+		} else if (tmpStrValue == "smallstatus") {
 			messageType = MESSAGE_STATUS_SMALL;
-		} else if (!tfs_strcmp(tmpStrValue.c_str(), "blueconsole")) {
+		} else if (tmpStrValue == "blueconsole") {
 			messageType = MESSAGE_STATUS_CONSOLE_BLUE;
-		} else if (!tfs_strcmp(tmpStrValue.c_str(), "redconsole")) {
+		} else if (tmpStrValue == "redconsole") {
 			messageType = MESSAGE_STATUS_CONSOLE_RED;
 		} else {
 			std::cout << "[Notice] Raid: Unknown type tag missing for announce event. Using default: " << static_cast<uint32_t>(messageType) << std::endl;

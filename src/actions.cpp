@@ -1,6 +1,8 @@
 /**
+ * @file actions.cpp
+ * 
  * The Forgotten Server - a free and open-source MMORPG server emulator
- * Copyright (C) 2019  Mark Samman <mark.samman@gmail.com>
+ * Copyright (C) 2019 Mark Samman <mark.samman@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -26,6 +28,7 @@
 #include "game.h"
 #include "pugicast.h"
 #include "spells.h"
+#include "rewardchest.h"
 
 extern Game g_game;
 extern Spells* g_spells;
@@ -376,9 +379,41 @@ ReturnValue Actions::internalUseItem(Player* player, const Position& pos, uint8_
 		} else {
 			openContainer = container;
 		}
+		
+		//reward chest
+		if (container->getRewardChest()) {
+			RewardChest* myRewardChest = player->getRewardChest();
+			if (myRewardChest->size() == 0) {
+				return RETURNVALUE_REWARDCHESTISEMPTY;
+			}
+
+			myRewardChest->setParent(container->getParent()->getTile());
+			for (auto& it : player->rewardMap) {
+				it.second->setParent(myRewardChest);
+			}
+
+			openContainer = myRewardChest;
+		}
+
+		//reward container proxy created when the boss dies
+		if (container->getID() == ITEM_REWARD_CONTAINER && !container->getReward()) {
+			if (Reward* reward = player->getReward(container->getIntAttr(ITEM_ATTRIBUTE_DATE), false)) {
+				reward->setParent(container->getRealParent());
+				openContainer = reward;
+			} else {
+				return RETURNVALUE_THISISIMPOSSIBLE;
+			}
+		}
 
 		uint32_t corpseOwner = container->getCorpseOwner();
-		if (corpseOwner != 0 && !player->canOpenCorpse(corpseOwner)) {
+		if (container->isRewardCorpse()) {
+			//only players who participated in the fight can open the corpse
+			if (player->getGroup()->id >= 4 || player->getAccountType() >= 3)
+				return RETURNVALUE_YOUCANTOPENCORPSEADM;
+			if (!player->getReward(container->getIntAttr(ITEM_ATTRIBUTE_DATE), false)) {
+				return RETURNVALUE_YOUARENOTTHEOWNER;
+			}
+		} else if (corpseOwner != 0 && !player->canOpenCorpse(corpseOwner)) {
 			return RETURNVALUE_YOUARENOTTHEOWNER;
 		}
 
@@ -414,10 +449,9 @@ ReturnValue Actions::internalUseItem(Player* player, const Position& pos, uint8_
 bool Actions::useItem(Player* player, const Position& pos, uint8_t index, Item* item, bool isHotkey)
 {
 	player->setNextAction(OTSYS_TIME() + g_config.getNumber(ConfigManager::ACTIONS_DELAY_INTERVAL));
-	player->stopWalk();
 
 	if (isHotkey) {
-		showUseHotkeyMessage(player, item, player->getItemTypeCount(item->getID(), item->getSubType()));
+		showUseHotkeyMessage(player, item, player->getItemTypeCount(item->getID(), -1));
 	}
 
 	ReturnValue ret = internalUseItem(player, pos, index, item, isHotkey);
@@ -432,7 +466,6 @@ bool Actions::useItemEx(Player* player, const Position& fromPos, const Position&
                         uint8_t toStackPos, Item* item, bool isHotkey, Creature* creature/* = nullptr*/)
 {
 	player->setNextAction(OTSYS_TIME() + g_config.getNumber(ConfigManager::EX_ACTIONS_DELAY_INTERVAL));
-	player->stopWalk();
 
 	Action* action = getAction(item);
 	if (!action) {
@@ -447,7 +480,14 @@ bool Actions::useItemEx(Player* player, const Position& fromPos, const Position&
 	}
 
 	if (isHotkey) {
-		showUseHotkeyMessage(player, item, player->getItemTypeCount(item->getID(), item->getSubType()));
+		showUseHotkeyMessage(player, item, player->getItemTypeCount(item->getID(), -1));
+	}
+
+	if (action->function) {
+		if (action->function(player, item, fromPos, action->getTarget(player, creature, toPos, toStackPos), toPos, isHotkey)) {
+			return true;
+		}
+		return false;
 	}
 
 	if (!action->executeUse(player, item, fromPos, action->getTarget(player, creature, toPos, toStackPos), toPos, isHotkey)) {
@@ -509,6 +549,34 @@ bool enterMarket(Player* player, Item*, const Position&, Thing*, const Position&
 	return true;
 }
 
+bool useImbueShrine(Player* player, Item*, const Position&, Thing* target, const Position& toPos, bool)
+{
+	Item* item = target ? target->getItem() : nullptr;
+	if (!item) {
+		player->sendTextMessage(MESSAGE_EVENT_ADVANCE, "This item is not imbuable.");
+		return false;
+	}
+
+	const ItemType& it = Item::items[item->getID()];
+	if(it.imbuingSlots <= 0 ) {
+		player->sendTextMessage(MESSAGE_EVENT_ADVANCE, "This item is not imbuable.");
+		return false;		
+	}
+
+	if (item->getTopParent() != player) {
+		player->sendTextMessage(MESSAGE_EVENT_ADVANCE, "You have to pick up the item to imbue it.");
+		return false;
+	}
+
+	if (!(toPos.y & 0x40)) {
+		player->sendTextMessage(MESSAGE_EVENT_ADVANCE, "You cannot imbue an equipped item.");
+		return false;
+	}
+
+	player->sendImbuementWindow(target->getItem());
+	return true;
+}
+
 }
 
 bool Action::loadFunction(const pugi::xml_attribute& attr, bool isScripted)
@@ -516,6 +584,8 @@ bool Action::loadFunction(const pugi::xml_attribute& attr, bool isScripted)
 	const char* functionName = attr.as_string();
 	if (strcasecmp(functionName, "market") == 0) {
 		function = enterMarket;
+	} else if (strcasecmp(functionName, "imbuement") == 0) {
+		function = useImbueShrine;
 	} else {
 		if (!isScripted) {
 			std::cout << "[Warning - Action::loadFunction] Function \"" << functionName << "\" does not exist." << std::endl;

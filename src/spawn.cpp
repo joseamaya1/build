@@ -1,6 +1,8 @@
 /**
+ * @file spawn.cpp
+ * 
  * The Forgotten Server - a free and open-source MMORPG server emulator
- * Copyright (C) 2019  Mark Samman <mark.samman@gmail.com>
+ * Copyright (C) 2019 Mark Samman <mark.samman@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,29 +26,32 @@
 #include "monster.h"
 #include "configmanager.h"
 #include "scheduler.h"
+#include "events.h"
 
 #include "pugicast.h"
 
+extern Events* g_events;
 extern ConfigManager g_config;
 extern Monsters g_monsters;
 extern Game g_game;
+extern Events* g_events;
 
 static constexpr int32_t MINSPAWN_INTERVAL = 1000;
 
-bool Spawns::loadFromXml(const std::string& filename)
+bool Spawns::loadFromXml(const std::string& fromFilename)
 {
 	if (loaded) {
 		return true;
 	}
 
 	pugi::xml_document doc;
-	pugi::xml_parse_result result = doc.load_file(filename.c_str());
+	pugi::xml_parse_result result = doc.load_file(fromFilename.c_str());
 	if (!result) {
-		printXMLError("Error - Spawns::loadFromXml", filename, result);
+		printXMLError("Error - Spawns::loadFromXml", fromFilename, result);
 		return false;
 	}
 
-	this->filename = filename;
+	this->filename = fromFilename;
 	loaded = true;
 
 	for (auto spawnNode : doc.child("spawns").children()) {
@@ -159,7 +164,7 @@ bool Spawns::isInZone(const Position& centerPos, int32_t radius, const Position&
 	}
 
 	return ((pos.getX() >= centerPos.getX() - radius) && (pos.getX() <= centerPos.getX() + radius) &&
-	        (pos.getY() >= centerPos.getY() - radius) && (pos.getY() <= centerPos.getY() + radius));
+			(pos.getY() >= centerPos.getY() - radius) && (pos.getY() <= centerPos.getY() + radius));
 }
 
 void Spawn::startSpawnCheck()
@@ -180,7 +185,7 @@ Spawn::~Spawn()
 
 bool Spawn::findPlayer(const Position& pos)
 {
-	SpectatorVector spectators;
+	SpectatorHashSet spectators;
 	g_game.map.getSpectators(spectators, pos, false, true);
 	for (Creature* spectator : spectators) {
 		if (!spectator->getPlayer()->hasFlag(PlayerFlag_IgnoredByMonsters)) {
@@ -217,6 +222,7 @@ bool Spawn::spawnMonster(uint32_t spawnId, MonsterType* mType, const Position& p
 
 	spawnedMap.insert(spawned_pair(spawnId, monster));
 	spawnMap[spawnId].lastSpawn = OTSYS_TIME();
+	g_events->eventMonsterOnSpawn(monster, pos);
 	return true;
 }
 
@@ -244,13 +250,23 @@ void Spawn::checkSpawn()
 		}
 
 		spawnBlock_t& sb = it.second;
+		if (!sb.mType->canSpawn(sb.pos)) {
+			sb.lastSpawn = OTSYS_TIME();
+			continue;
+		}
+
 		if (OTSYS_TIME() >= sb.lastSpawn + sb.interval) {
-			if (findPlayer(sb.pos)) {
+			if (sb.mType->info.isBlockable && findPlayer(sb.pos)) {
 				sb.lastSpawn = OTSYS_TIME();
 				continue;
 			}
 
-			spawnMonster(spawnId, sb.mType, sb.pos, sb.direction);
+			if (sb.mType->info.isBlockable) {
+				spawnMonster(spawnId, sb.mType, sb.pos, sb.direction);
+			} else {
+				scheduleSpawn(spawnId, sb, 3 * NONBLOCKABLE_SPAWN_INTERVAL);
+			}
+
 			if (++spawnCount >= static_cast<uint32_t>(g_config.getNumber(ConfigManager::RATE_SPAWN))) {
 				break;
 			}
@@ -259,6 +275,16 @@ void Spawn::checkSpawn()
 
 	if (spawnedMap.size() < spawnMap.size()) {
 		checkSpawnEvent = g_scheduler.addEvent(createSchedulerTask(getInterval(), std::bind(&Spawn::checkSpawn, this)));
+	}
+}
+
+void Spawn::scheduleSpawn(uint32_t spawnId, spawnBlock_t& sb, uint16_t interval)
+{
+	if (interval <= 0) {
+		spawnMonster(spawnId, sb.mType, sb.pos, sb.direction);
+	} else {
+		g_game.addMagicEffect(sb.pos, CONST_ME_TELEPORT);
+		g_scheduler.addEvent(createSchedulerTask(1400, std::bind(&Spawn::scheduleSpawn, this, spawnId, sb, interval - NONBLOCKABLE_SPAWN_INTERVAL)));
 	}
 }
 
@@ -284,7 +310,7 @@ void Spawn::cleanup()
 	}
 }
 
-bool Spawn::addMonster(const std::string& name, const Position& pos, Direction dir, uint32_t interval)
+bool Spawn::addMonster(const std::string& name, const Position& pos, Direction dir, uint32_t scheduleInterval)
 {
 	MonsterType* mType = g_monsters.getMonsterType(name);
 	if (!mType) {
@@ -292,13 +318,13 @@ bool Spawn::addMonster(const std::string& name, const Position& pos, Direction d
 		return false;
 	}
 
-	this->interval = std::min(this->interval, interval);
+	this->interval = std::min(this->interval, scheduleInterval);
 
 	spawnBlock_t sb;
 	sb.mType = mType;
 	sb.pos = pos;
 	sb.direction = dir;
-	sb.interval = interval;
+	sb.interval = scheduleInterval;
 	sb.lastSpawn = 0;
 
 	uint32_t spawnId = spawnMap.size() + 1;

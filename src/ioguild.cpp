@@ -1,6 +1,8 @@
 /**
+ * @file ioguild.cpp
+ * 
  * The Forgotten Server - a free and open-source MMORPG server emulator
- * Copyright (C) 2019  Mark Samman <mark.samman@gmail.com>
+ * Copyright (C) 2019 Mark Samman <mark.samman@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,14 +27,16 @@
 
 Guild* IOGuild::loadGuild(uint32_t guildId)
 {
+	Database& db = Database::getInstance();
 	std::ostringstream query;
 	query << "SELECT `name` FROM `guilds` WHERE `id` = " << guildId;
-	if (DBResult_ptr result = g_database.storeQuery(query.str())) {
+	if (DBResult_ptr result = db.storeQuery(query.str())) {
 		Guild* guild = new Guild(guildId, result->getString("name"));
 
 		query.str(std::string());
 		query << "SELECT `id`, `name`, `level` FROM `guild_ranks` WHERE `guild_id` = " << guildId;
-		if ((result = g_database.storeQuery(query.str()))) {
+
+		if ((result = db.storeQuery(query.str()))) {
 			do {
 				guild->addRank(result->getNumber<uint32_t>("id"), result->getString("name"), result->getNumber<uint16_t>("level"));
 			} while (result->next());
@@ -44,10 +48,12 @@ Guild* IOGuild::loadGuild(uint32_t guildId)
 
 uint32_t IOGuild::getGuildIdByName(const std::string& name)
 {
-	std::ostringstream query;
-	query << "SELECT `id` FROM `guilds` WHERE `name` = " << g_database.escapeString(name);
+	Database& db = Database::getInstance();
 
-	DBResult_ptr result = g_database.storeQuery(query.str());
+	std::ostringstream query;
+	query << "SELECT `id` FROM `guilds` WHERE `name` = " << db.escapeString(name);
+
+	DBResult_ptr result = db.storeQuery(query.str());
 	if (!result) {
 		return 0;
 	}
@@ -59,7 +65,7 @@ void IOGuild::getWarList(uint32_t guildId, GuildWarVector& guildWarVector)
 	std::ostringstream query;
 	query << "SELECT `guild1`, `guild2` FROM `guild_wars` WHERE (`guild1` = " << guildId << " OR `guild2` = " << guildId << ") AND `ended` = 0 AND `status` = 1";
 
-	DBResult_ptr result = g_database.storeQuery(query.str());
+	DBResult_ptr result = Database::getInstance().storeQuery(query.str());
 	if (!result) {
 		return;
 	}

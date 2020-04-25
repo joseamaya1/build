@@ -1,6 +1,8 @@
 /**
+ * @file creatureevent.cpp
+ * 
  * The Forgotten Server - a free and open-source MMORPG server emulator
- * Copyright (C) 2019  Mark Samman <mark.samman@gmail.com>
+ * Copyright (C) 2019 Mark Samman <mark.samman@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -180,29 +182,29 @@ bool CreatureEvent::configureEvent(const pugi::xml_node& node)
 	}
 
 	std::string tmpStr = asLowerCaseString(typeAttribute.as_string());
-	if (!tfs_strcmp(tmpStr.c_str(), "login")) {
+	if (tmpStr == "login") {
 		type = CREATURE_EVENT_LOGIN;
-	} else if (!tfs_strcmp(tmpStr.c_str(), "logout")) {
+	} else if (tmpStr == "logout") {
 		type = CREATURE_EVENT_LOGOUT;
-	} else if (!tfs_strcmp(tmpStr.c_str(), "think")) {
+	} else if (tmpStr == "think") {
 		type = CREATURE_EVENT_THINK;
-	} else if (!tfs_strcmp(tmpStr.c_str(), "preparedeath")) {
+	} else if (tmpStr == "preparedeath") {
 		type = CREATURE_EVENT_PREPAREDEATH;
-	} else if (!tfs_strcmp(tmpStr.c_str(), "death")) {
+	} else if (tmpStr == "death") {
 		type = CREATURE_EVENT_DEATH;
-	} else if (!tfs_strcmp(tmpStr.c_str(), "kill")) {
+	} else if (tmpStr == "kill") {
 		type = CREATURE_EVENT_KILL;
-	} else if (!tfs_strcmp(tmpStr.c_str(), "advance")) {
+	} else if (tmpStr == "advance") {
 		type = CREATURE_EVENT_ADVANCE;
-	} else if (!tfs_strcmp(tmpStr.c_str(), "modalwindow")) {
+	} else if (tmpStr == "modalwindow") {
 		type = CREATURE_EVENT_MODALWINDOW;
-	} else if (!tfs_strcmp(tmpStr.c_str(), "textedit")) {
+	} else if (tmpStr == "textedit") {
 		type = CREATURE_EVENT_TEXTEDIT;
-	} else if (!tfs_strcmp(tmpStr.c_str(), "healthchange")) {
+	} else if (tmpStr == "healthchange") {
 		type = CREATURE_EVENT_HEALTHCHANGE;
-	} else if (!tfs_strcmp(tmpStr.c_str(), "manachange")) {
+	} else if (tmpStr == "manachange") {
 		type = CREATURE_EVENT_MANACHANGE;
-	} else if (!tfs_strcmp(tmpStr.c_str(), "extendedopcode")) {
+	} else if (tmpStr == "extendedopcode") {
 		type = CREATURE_EVENT_EXTENDED_OPCODE;
 	} else {
 		std::cout << "[Error - CreatureEvent::configureEvent] Invalid type for creature event: " << eventName << std::endl;

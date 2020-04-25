@@ -1,6 +1,8 @@
 /**
+ * @file databasemanager.cpp
+ * 
  * The Forgotten Server - a free and open-source MMORPG server emulator
- * Copyright (C) 2019  Mark Samman <mark.samman@gmail.com>
+ * Copyright (C) 2019 Mark Samman <mark.samman@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,15 +24,18 @@
 #include "configmanager.h"
 #include "databasemanager.h"
 #include "luascript.h"
+#include "gameworldconfig.h"
 
 extern ConfigManager g_config;
+extern GameWorldConfig g_gameworld;
 
 bool DatabaseManager::optimizeTables()
 {
+	Database& db = Database::getInstance();
 	std::ostringstream query;
 
-	query << "SELECT `TABLE_NAME` FROM `information_schema`.`TABLES` WHERE `TABLE_SCHEMA` = " << g_database.escapeString(g_config.getString(ConfigManager::MYSQL_DB)) << " AND `DATA_FREE` > 0";
-	DBResult_ptr result = g_database.storeQuery(query.str());
+	query << "SELECT `TABLE_NAME` FROM `information_schema`.`TABLES` WHERE `TABLE_SCHEMA` = " << db.escapeString(g_config.getString(ConfigManager::MYSQL_DB)) << " AND `DATA_FREE` > 0";
+	DBResult_ptr result = db.storeQuery(query.str());
 	if (!result) {
 		return false;
 	}
@@ -42,7 +47,7 @@ bool DatabaseManager::optimizeTables()
 		query.str(std::string());
 		query << "OPTIMIZE TABLE `" << tableName << '`';
 
-		if (g_database.executeQuery(query.str())) {
+		if (db.executeQuery(query.str())) {
 			std::cout << " [success]" << std::endl;
 		} else {
 			std::cout << " [failed]" << std::endl;
@@ -53,23 +58,33 @@ bool DatabaseManager::optimizeTables()
 
 bool DatabaseManager::tableExists(const std::string& tableName)
 {
+	Database& db = Database::getInstance();
+
 	std::ostringstream query;
-	query << "SELECT `TABLE_NAME` FROM `information_schema`.`tables` WHERE `TABLE_SCHEMA` = " << g_database.escapeString(g_config.getString(ConfigManager::MYSQL_DB)) << " AND `TABLE_NAME` = " << g_database.escapeString(tableName) << " LIMIT 1";
-	return g_database.storeQuery(query.str()).get() != nullptr;
+	query << "SELECT `TABLE_NAME` FROM `information_schema`.`tables` WHERE `TABLE_SCHEMA` = " << db.escapeString(g_config.getString(ConfigManager::MYSQL_DB)) << " AND `TABLE_NAME` = " << db.escapeString(tableName) << " LIMIT 1";
+	return db.storeQuery(query.str()).get() != nullptr;
 }
 
 bool DatabaseManager::isDatabaseSetup()
 {
+	Database& db = Database::getInstance();
 	std::ostringstream query;
-	query << "SELECT `TABLE_NAME` FROM `information_schema`.`tables` WHERE `TABLE_SCHEMA` = " << g_database.escapeString(g_config.getString(ConfigManager::MYSQL_DB));
-	return g_database.storeQuery(query.str()).get() != nullptr;
+	query << "SELECT `TABLE_NAME` FROM `information_schema`.`tables` WHERE `TABLE_SCHEMA` = " << db.escapeString(g_config.getString(ConfigManager::MYSQL_DB));
+	return db.storeQuery(query.str()).get() != nullptr;
 }
 
 int32_t DatabaseManager::getDatabaseVersion()
 {
+	uint16_t worldId = g_gameworld.getWorldId();
 	if (!tableExists("server_config")) {
-		g_database.executeQuery("CREATE TABLE `server_config` (`config` VARCHAR(50) NOT NULL, `value` VARCHAR(256) NOT NULL DEFAULT '', UNIQUE(`config`)) ENGINE = InnoDB");
-		g_database.executeQuery("INSERT INTO `server_config` VALUES ('db_version', 0)");
+		Database& db = Database::getInstance();
+		std::ostringstream createQuery;
+		createQuery << "CREATE TABLE `server_config` (`world_id` INT(11) NOT NULL DEFAULT 0, `config` VARCHAR(50) NOT NULL, `value` VARCHAR(256) NOT NULL DEFAULT '') ENGINE = InnoDB";
+		db.executeQuery(createQuery.str());
+
+		std::ostringstream insertQuery;
+		insertQuery << "INSERT INTO `server_config` VALUES ("<< worldId <<", 'db_version', 0)";
+		db.executeQuery(insertQuery.str());
 		return 0;
 	}
 
@@ -137,10 +152,13 @@ void DatabaseManager::updateDatabase()
 
 bool DatabaseManager::getDatabaseConfig(const std::string& config, int32_t& value)
 {
+	Database& db = Database::getInstance();
 	std::ostringstream query;
-	query << "SELECT `value` FROM `server_config` WHERE `config` = " << g_database.escapeString(config);
+	uint16_t worldId = g_gameworld.getWorldId();
 
-	DBResult_ptr result = g_database.storeQuery(query.str());
+	query << "SELECT `value` FROM `server_config` WHERE `world_id` = "<< worldId <<" AND `config` = " << db.escapeString(config);
+
+	DBResult_ptr result = db.storeQuery(query.str());
 	if (!result) {
 		return false;
 	}
@@ -151,15 +169,17 @@ bool DatabaseManager::getDatabaseConfig(const std::string& config, int32_t& valu
 
 void DatabaseManager::registerDatabaseConfig(const std::string& config, int32_t value)
 {
+	Database& db = Database::getInstance();
 	std::ostringstream query;
+	uint16_t worldId = g_gameworld.getWorldId();
 
 	int32_t tmp;
 
 	if (!getDatabaseConfig(config, tmp)) {
-		query << "INSERT INTO `server_config` VALUES (" << g_database.escapeString(config) << ", '" << value << "')";
+		query << "INSERT INTO `server_config` VALUES (" << worldId << ", " << db.escapeString(config) << ", '" << value << "')";
 	} else {
-		query << "UPDATE `server_config` SET `value` = '" << value << "' WHERE `config` = " << g_database.escapeString(config);
+		query << "UPDATE `server_config` SET `value` = '" << value << "' WHERE `world_id` = " << worldId << " AND `config` = " << db.escapeString(config);
 	}
 
-	g_database.executeQuery(query.str());
+	db.executeQuery(query.str());
 }

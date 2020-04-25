@@ -1,6 +1,8 @@
 /**
+ * @file otserv.cpp
+ * 
  * The Forgotten Server - a free and open-source MMORPG server emulator
- * Copyright (C) 2019  Mark Samman <mark.samman@gmail.com>
+ * Copyright (C) 2019 Mark Samman <mark.samman@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -35,9 +37,9 @@
 #include "scheduler.h"
 #include "databasetasks.h"
 #include "script.h"
-#include <fstream>
+#include "gameworldconfig.h"
+// TODO: #include "stdarg.h"
 
-Database g_database;
 DatabaseTasks g_databaseTasks;
 Dispatcher g_dispatcher;
 Scheduler g_scheduler;
@@ -46,6 +48,7 @@ Game g_game;
 ConfigManager g_config;
 Monsters g_monsters;
 Vocations g_vocations;
+GameWorldConfig g_gameworld;
 extern Scripts* g_scripts;
 RSA g_RSA;
 
@@ -59,9 +62,9 @@ void startupErrorMessage(const std::string& errorStr)
 	g_loaderSignal.notify_all();
 }
 
-void mainLoader(int argc, char* argv[], ServiceManager* services);
+void mainLoader(int argc, char* argv[], ServiceManager* servicer);
 
-[[noreturn]] void badAllocationHandler()
+void badAllocationHandler()
 {
 	// Use functions that only use stack allocation
 	puts("Allocation failed, server out of memory.\nDecrease the size of your map or compile in 64 bits mode.\n");
@@ -71,6 +74,10 @@ void mainLoader(int argc, char* argv[], ServiceManager* services);
 
 int main(int argc, char* argv[])
 {
+#ifdef DEBUG_LOG
+	spdlog::set_pattern("[%Y-%d-%m %H:%M:%S.%e] [file %@] [func %!] [thread %t] [%l] %v ");
+	SPDLOG_DEBUG("[OTSERV] SPDLOG LOG DEBUG ENABLED");
+#endif
 	// Setup bad allocation handler
 	std::set_new_handler(badAllocationHandler);
 
@@ -84,6 +91,7 @@ int main(int argc, char* argv[])
 	g_loaderSignal.wait(g_loaderUniqueLock);
 
 	if (serviceManager.is_running()) {
+
 		std::cout << ">> " << g_config.getString(ConfigManager::SERVER_NAME) << " Server Online!" << std::endl << std::endl;
 		serviceManager.run();
 	} else {
@@ -99,7 +107,7 @@ int main(int argc, char* argv[])
 	return 0;
 }
 
-void mainLoader(int, char*[], ServiceManager* services)
+void mainLoader(int argc, char* argv[], ServiceManager* services)
 {
 	//dispatcher thread
 	g_game.setGameState(GAME_STATE_STARTUP);
@@ -108,8 +116,8 @@ void mainLoader(int, char*[], ServiceManager* services)
 #ifdef _WIN32
 	SetConsoleTitle(STATUS_SERVER_NAME);
 #endif
-	std::cout << STATUS_SERVER_NAME << " - Version " << STATUS_SERVER_VERSION << std::endl;
-	std::cout << "Compiled with " << BOOST_COMPILER << std::endl;
+	std::cout << "The " << STATUS_SERVER_NAME << " - Version: (" << STATUS_SERVER_VERSION << ")" << std::endl;
+	std::cout << "Compiled with: " << BOOST_COMPILER << std::endl;
 	std::cout << "Compiled on " << __DATE__ << ' ' << __TIME__ << " for platform ";
 
 #if defined(__amd64__) || defined(_M_X64)
@@ -123,31 +131,36 @@ void mainLoader(int, char*[], ServiceManager* services)
 #endif
 	std::cout << std::endl;
 
-	std::cout << "A server developed by " << STATUS_SERVER_DEVELOPERS << std::endl;
-	std::cout << "Visit our forum for updates, support, and resources: http://otland.net/." << std::endl;
+	std::cout << "Special Credits for: " << STATUS_SERVER_CREDITS << "." << std::endl;
 	std::cout << std::endl;
 
-	// check if config.lua or config.lua.dist exist
-	std::ifstream c_test("./config.lua");
-	if (!c_test.is_open()) {
-		std::ifstream config_lua_dist("./config.lua.dist");
-		if (config_lua_dist.is_open()) {
-			std::cout << ">> copying config.lua.dist to config.lua" << std::endl;
-			std::ofstream config_lua("config.lua");
-			config_lua << config_lua_dist.rdbuf();
-			config_lua.close();
-			config_lua_dist.close();
+	// TODO: dirty for now; Use stdarg;
+	if (argc > 1) {
+		std::string param = { argv[1] };
+		if (param == "-c") {
+			g_config.setConfigFileLua(argv[2]);
 		}
-	} else {
-		c_test.close();
 	}
 
 	// read global config
-	std::cout << ">> Loading config" << std::endl;
+	std::cout << ">> Loading config: " << g_config.getConfigFileLua() << std::endl;
 	if (!g_config.load()) {
-		startupErrorMessage("Unable to load config.lua!");
+		startupErrorMessage("Unable to load Config File!");
 		return;
 	}
+	
+	#ifdef MULTIWORLD_SYSTEM
+		std::cout << ">> Loading multiworld config..." << std::endl;
+		if (!g_gameworld.load()) {
+			startupErrorMessage("Unable to load gameworlds!");
+			return;
+		}
+
+		std::vector<GameWorld> Gameworlds = g_gameworld.getGameworlds();
+		for (GameWorld world : Gameworlds) {
+			std::cout << ">>>> World "<< world.name <<" (ID "<< world.worldid <<") - Loaded successfully." << std::endl;
+		}
+	#endif
 
 #ifdef _WIN32
 	const std::string& defaultPriority = g_config.getString(ConfigManager::DEFAULT_PRIORITY);
@@ -159,33 +172,28 @@ void mainLoader(int, char*[], ServiceManager* services)
 #endif
 
 	//set RSA key
-	const char* n("109120132967399429278860960508995541528237502902798129123468757937266291492576446330739696001110603907230888610072655818825358503429057592827629436413108566029093628212635953836686562675849720620786279431090218017681061521755056710823876476444260558147179707119674283982419152118103759076030616683978566631413");
-	const char* d("46730330223584118622160180015036832148732986808519344675210555262940258739805766860224610646919605860206328024326703361630109888417839241959507572247284807035235569619173792292786907845791904955103601652822519121908367187885509270025388641700821735345222087940578381210879116823013776808975766851829020659073");
-	g_RSA.setKey(n, d);
+    g_RSA.loadPEM("key.pem");
 
 	std::cout << ">> Establishing database connection..." << std::flush;
-	if (!g_database.connect()) {
+
+	if (!Database::getInstance().connect()) {
 		startupErrorMessage("Failed to connect to database.");
 		return;
 	}
 
 	std::cout << " MySQL " << Database::getClientVersion() << std::endl;
-	if (g_database.getMaxPacketSize() < 104857600) {
-		std::cout << "> Max MYSQL Query size below 100MB might generate undefined behaviour." << std::endl;
-		std::cout << "> Do you want to continue? Press enter to continue." << std::endl;
-		getchar();
-	}
 
 	// run database manager
 	std::cout << ">> Running database manager" << std::endl;
 
 	if (!DatabaseManager::isDatabaseSetup()) {
-		startupErrorMessage("The database you have specified in config.lua is empty, please import the schema.sql to your database.");
+		startupErrorMessage("The database you have specified in config lua file is empty, please import the schema.sql to your database.");
 		return;
 	}
 	g_databaseTasks.start();
 
 	DatabaseManager::updateDatabase();
+
 	if (g_config.getBoolean(ConfigManager::OPTIMIZE_DATABASE) && !DatabaseManager::optimizeTables()) {
 		std::cout << "> No tables were optimized." << std::endl;
 	}
@@ -199,7 +207,7 @@ void mainLoader(int, char*[], ServiceManager* services)
 
 	// load item data
 	std::cout << ">> Loading items" << std::endl;
-	if (!Item::items.loadFromOtb("data/items/items.otb")) {
+	if (Item::items.loadFromOtb("data/items/items.otb") != ERROR_NONE) {
 		startupErrorMessage("Unable to load items (OTB)!");
 		return;
 	}
@@ -241,11 +249,11 @@ void mainLoader(int, char*[], ServiceManager* services)
 
 	std::cout << ">> Checking world type... " << std::flush;
 	std::string worldType = asLowerCaseString(g_config.getString(ConfigManager::WORLD_TYPE));
-	if (!tfs_strcmp(worldType.c_str(), "pvp")) {
+	if (worldType == "pvp") {
 		g_game.setWorldType(WORLD_TYPE_PVP);
-	} else if (!tfs_strcmp(worldType.c_str(), "no-pvp")) {
+	} else if (worldType == "no-pvp") {
 		g_game.setWorldType(WORLD_TYPE_NO_PVP);
-	} else if (!tfs_strcmp(worldType.c_str(), "pvp-enforced")) {
+	} else if (worldType == "pvp-enforced") {
 		g_game.setWorldType(WORLD_TYPE_PVP_ENFORCED);
 	} else {
 		std::cout << std::endl;
@@ -255,6 +263,7 @@ void mainLoader(int, char*[], ServiceManager* services)
 		startupErrorMessage(ss.str());
 		return;
 	}
+
 	std::cout << asUpperCaseString(worldType) << std::endl;
 
 	std::cout << ">> Loading map" << std::endl;
@@ -278,13 +287,14 @@ void mainLoader(int, char*[], ServiceManager* services)
 
 	RentPeriod_t rentPeriod;
 	std::string strRentPeriod = asLowerCaseString(g_config.getString(ConfigManager::HOUSE_RENT_PERIOD));
-	if (!tfs_strcmp(strRentPeriod.c_str(), "yearly")) {
+
+	if (strRentPeriod == "yearly") {
 		rentPeriod = RENTPERIOD_YEARLY;
-	} else if (!tfs_strcmp(strRentPeriod.c_str(), "weekly")) {
+	} else if (strRentPeriod == "weekly") {
 		rentPeriod = RENTPERIOD_WEEKLY;
-	} else if (!tfs_strcmp(strRentPeriod.c_str(), "monthly")) {
+	} else if (strRentPeriod == "monthly") {
 		rentPeriod = RENTPERIOD_MONTHLY;
-	} else if (!tfs_strcmp(strRentPeriod.c_str(), "daily")) {
+	} else if (strRentPeriod == "daily") {
 		rentPeriod = RENTPERIOD_DAILY;
 	} else {
 		rentPeriod = RENTPERIOD_NEVER;
