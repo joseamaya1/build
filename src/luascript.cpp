@@ -1770,9 +1770,9 @@ void LuaScriptInterface::registerFunctions()
 	registerEnum(CHASEMODE_STANDSTILL)
 	registerEnum(CHASEMODE_FOLLOW)
 
-	registerEnum(FIGHTMODE_ATTACK)
+	/* registerEnum(FIGHTMODE_ATTACK)
 	registerEnum(FIGHTMODE_BALANCED)
-	registerEnum(FIGHTMODE_DEFENSE)
+	registerEnum(FIGHTMODE_DEFENSE) */
 
 	registerEnum(PVP_MODE_DOVE)
 	registerEnum(PVP_MODE_WHITE_HAND)

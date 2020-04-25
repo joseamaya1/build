@@ -619,7 +619,7 @@ void Combat::combatTileEffects(const SpectatorHashSet& spectators, Creature* cas
 			if (casterPlayer) {
 				if (g_game.getWorldType() == WORLD_TYPE_NO_PVP || tile->hasFlag(TILESTATE_NOPVPZONE)) {
 					if (itemId == ITEM_FIREFIELD_PVP_FULL) {
-						itemId = ITEM_FIREFIELD_NOPVP;
+						itemId = ITEM_FIREFIELD_NOPVP_FULL;
 					} else if (itemId == ITEM_POISONFIELD_PVP) {
 						itemId = ITEM_POISONFIELD_NOPVP;
 					} else if (itemId == ITEM_ENERGYFIELD_PVP) {
