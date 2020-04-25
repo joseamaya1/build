@@ -1,6 +1,8 @@
 /**
+ * @file spells.h
+ * 
  * The Forgotten Server - a free and open-source MMORPG server emulator
- * Copyright (C) 2019  Mark Samman <mark.samman@gmail.com>
+ * Copyright (C) 2019 Mark Samman <mark.samman@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,8 +19,8 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#ifndef FS_SPELLS_H_D78A7CCB7080406E8CAA6B1D31D3DA71
-#define FS_SPELLS_H_D78A7CCB7080406E8CAA6B1D31D3DA71
+#ifndef OT_SRC_SPELLS_H_
+#define OT_SRC_SPELLS_H_
 
 #include "luascript.h"
 #include "player.h"
@@ -44,7 +46,6 @@ class Spells final : public BaseEvents
 		Spells(const Spells&) = delete;
 		Spells& operator=(const Spells&) = delete;
 
-		std::vector<uint16_t> getSpellsByVocation(uint16_t vocationId);
 		Spell* getSpellByName(const std::string& name);
 		RuneSpell* getRuneSpell(uint32_t id);
 		RuneSpell* getRuneSpellByName(const std::string& name);
@@ -54,12 +55,14 @@ class Spells final : public BaseEvents
 
 		InstantSpell* getInstantSpellById(uint32_t spellId);
 
-		TalkActionResult_t playerSaySpell(Player* player, std::string& words, const std::string& lowerWords);
+		TalkActionResult_t playerSaySpell(Player* player, std::string& words);
 
 		static Position getCasterPosition(Creature* creature, Direction dir);
 		std::string getScriptBaseName() const override;
 
-		const std::unordered_map<std::string, InstantSpell>& getInstantSpells() const {
+		std::list<uint16_t> getSpellsByVocation(uint16_t vocationId);
+
+		const std::map<std::string, InstantSpell>& getInstantSpells() const {
 			return instants;
 		};
 
@@ -74,7 +77,7 @@ class Spells final : public BaseEvents
 		bool registerEvent(Event_ptr event, const pugi::xml_node& node) override;
 
 		std::map<uint16_t, RuneSpell> runes;
-		std::unordered_map<std::string, InstantSpell> instants;
+		std::map<std::string, InstantSpell> instants;
 
 		friend class CombatSpell;
 		LuaScriptInterface scriptInterface { "Spell Interface" };
@@ -208,13 +211,13 @@ class Spell : public BaseSpell
 			vocSpellMap[n] = b;
 		}
 
-		const SpellGroup_t getGroup() const {
+		SpellGroup_t getGroup() {
 			return group;
 		}
 		void setGroup(SpellGroup_t g) {
 			group = g;
 		}
-		const SpellGroup_t getSecondaryGroup() const {
+		SpellGroup_t getSecondaryGroup() {
 			return secondaryGroup;
 		}
 		void setSecondaryGroup(SpellGroup_t g) {
@@ -315,6 +318,7 @@ class Spell : public BaseSpell
 		bool needTarget = false;
 
 	private:
+
 		uint32_t mana = 0;
 		uint32_t manaPercent = 0;
 		uint32_t soul = 0;

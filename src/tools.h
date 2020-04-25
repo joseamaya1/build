@@ -1,6 +1,8 @@
 /**
+ * @file tools.h
+ * 
  * The Forgotten Server - a free and open-source MMORPG server emulator
- * Copyright (C) 2019  Mark Samman <mark.samman@gmail.com>
+ * Copyright (C) 2019 Mark Samman <mark.samman@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,11 +19,12 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#ifndef FS_TOOLS_H_5F9A9742DA194628830AA1C64909AE43
-#define FS_TOOLS_H_5F9A9742DA194628830AA1C64909AE43
+#ifndef OT_SRC_TOOLS_H_
+#define OT_SRC_TOOLS_H_
 
 #include <random>
-
+#include <regex>
+#include <boost/algorithm/string.hpp>
 #include "position.h"
 #include "const.h"
 #include "enums.h"
@@ -29,13 +32,12 @@
 void printXMLError(const std::string& where, const std::string& fileName, const pugi::xml_parse_result& result);
 
 std::string transformToSHA1(const std::string& input);
-std::string generateToken(const std::string& key, uint32_t ticks);
+std::string generateToken(const std::string& secret, uint32_t ticks);
 
 void replaceString(std::string& str, const std::string& sought, const std::string& replacement);
 void trim_right(std::string& source, char t);
 void trim_left(std::string& source, char t);
 void toLowerCaseString(std::string& source);
-void toUpperCaseString(std::string& source);
 std::string asLowerCaseString(std::string source);
 std::string asUpperCaseString(std::string source);
 
@@ -70,12 +72,13 @@ ShootType_t getShootType(const std::string& strValue);
 Ammo_t getAmmoType(const std::string& strValue);
 WeaponAction_t getWeaponAction(const std::string& strValue);
 Skulls_t getSkullType(const std::string& strValue);
+SpawnType_t getSpawnType(const std::string& strValue);
 std::string getCombatName(CombatType_t combatType);
+CombatType_t getCombatType(const std::string& combatname);
 
-std::string getSpecialSkillName(uint8_t skillid);
 std::string getSkillName(uint8_t skillid);
 
-uint32_t adlerChecksum(const uint8_t* data, size_t length);
+uint32_t adlerChecksum(const uint8_t* data, size_t len);
 
 std::string ucfirst(std::string str);
 std::string ucwords(std::string str);
@@ -93,16 +96,15 @@ itemAttrTypes stringToItemAttribute(const std::string& str);
 
 const char* getReturnMessage(ReturnValue value);
 
+void capitalizeWords(std::string &source);
+NameEval_t validateName(const std::string &name);
+
+bool isCaskItem(uint16_t itemId);
+
 int64_t OTSYS_TIME();
 
 SpellGroup_t stringToSpellGroup(std::string value);
 
-#if defined(__SSE4_2__)
-int tfs_strncmp(const char* s1, const char* s2, size_t n);
-int tfs_strcmp(const char* s1, const char* s2);
-#else
-#define tfs_strncmp strncmp
-#define tfs_strcmp strcmp
-#endif
+uint16_t getPvpItem(uint16_t itemId, bool isPvp);
 
 #endif

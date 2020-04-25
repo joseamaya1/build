@@ -1,6 +1,8 @@
 /**
+ * @file talkaction.h
+ * 
  * The Forgotten Server - a free and open-source MMORPG server emulator
- * Copyright (C) 2019  Mark Samman <mark.samman@gmail.com>
+ * Copyright (C) 2019 Mark Samman <mark.samman@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,8 +19,8 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#ifndef FS_TALKACTION_H_E6AABAC0F89843469526ADF310F3131C
-#define FS_TALKACTION_H_E6AABAC0F89843469526ADF310F3131C
+#ifndef OT_SRC_TALKACTION_H_
+#define OT_SRC_TALKACTION_H_
 
 #include "luascript.h"
 #include "baseevents.h"
@@ -46,10 +48,10 @@ class TalkAction : public Event
 		void setWords(std::string word) {
 			words = word;
 		}
-		char getSeparator() const {
+		std::string getSeparator() const {
 			return separator;
 		}
-		void setSeparator(char sep) {
+		void setSeparator(std::string sep) {
 			separator = sep;
 		}
 
@@ -61,7 +63,7 @@ class TalkAction : public Event
 		std::string getScriptEventName() const override;
 
 		std::string words;
-		char separator = '"';
+		std::string separator = "\"";
 };
 
 class TalkActions final : public BaseEvents
@@ -85,7 +87,7 @@ class TalkActions final : public BaseEvents
 		Event_ptr getEvent(const std::string& nodeName) override;
 		bool registerEvent(Event_ptr event, const pugi::xml_node& node) override;
 
-		std::unordered_map<std::string, TalkAction> talkActions;
+		std::map<std::string, TalkAction> talkActions;
 
 		LuaScriptInterface scriptInterface;
 };

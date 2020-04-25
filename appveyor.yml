@@ -1,4 +1,4 @@
-image: Visual Studio 2017
+image: Visual Studio 2019
 
 shallow_clone: true
 
@@ -10,13 +10,14 @@ configuration:
   - Release
 
 matrix:
-  fast_finish: true
+  fast_finish: false
 
 only_commits:
   files:
     - src/
     - vc14/
-    - appveyor.yml
+    - .appveyor.yml
+    - cmake/
 
 install:
   - cmd : vcpkg install boost-iostreams:x64-windows
@@ -30,11 +31,15 @@ install:
   - cmd : vcpkg install libmariadb:x64-windows
   - cmd : vcpkg install pugixml:x64-windows
   - cmd : vcpkg install mpir:x64-windows
+  - cmd : vcpkg install spdlog:x64-windows
 
 build:
   parallel: true
   # MSBuild verbosity level
   #verbosity: detailed
+
+after_build:
+  - 7z a -tzip OTG-Premium-Version.zip -r .\vc14\*.exe -ir!.\vc14\*.dll
 
 cache:
   - c:\tools\vcpkg\installed\
@@ -42,3 +47,4 @@ cache:
 artifacts:
   - path: vc14\**\theforgottenserver*.exe
   - path: vc14\**\*.dll
+  - path: OTG-Premium-Version.zip

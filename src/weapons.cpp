@@ -1,6 +1,8 @@
 /**
+ * @file weapons.cpp
+ * 
  * The Forgotten Server - a free and open-source MMORPG server emulator
- * Copyright (C) 2019  Mark Samman <mark.samman@gmail.com>
+ * Copyright (C) 2019 Mark Samman <mark.samman@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,12 +25,14 @@
 #include "configmanager.h"
 #include "game.h"
 #include "pugicast.h"
+#include "events.h"
 #include "weapons.h"
 
 extern Game g_game;
 extern Vocations g_vocations;
 extern ConfigManager g_config;
 extern Weapons* g_weapons;
+extern Events* g_events;
 
 Weapons::Weapons()
 {
@@ -188,7 +192,7 @@ bool Weapon::configureEvent(const pugi::xml_node& node)
 		premium = attr.as_bool();
 	}
 
-	if ((attr = node.attribute("breakchance"))) {
+	if ((attr = node.attribute("breakchance")) && g_config.getBoolean(ConfigManager::REMOVE_WEAPON_CHARGES)) {
 		breakChance = std::min<uint8_t>(100, pugi::cast<uint16_t>(attr.value()));
 	}
 
@@ -227,41 +231,41 @@ bool Weapon::configureEvent(const pugi::xml_node& node)
 		}
 	}
 
-	std::string vocationString;
+	std::string vocationName;
 	for (const std::string& str : vocStringList) {
-		if (!vocationString.empty()) {
+		if (!vocationName.empty()) {
 			if (str != vocStringList.back()) {
-				vocationString.push_back(',');
-				vocationString.push_back(' ');
+				vocationName.push_back(',');
+				vocationName.push_back(' ');
 			} else {
-				vocationString += " and ";
+				vocationName += " and ";
 			}
 		}
 
-		vocationString += str;
-		vocationString.push_back('s');
+		vocationName += str;
+		vocationName.push_back('s');
 	}
 
-	uint32_t wieldInfo = 0;
+	uint32_t wieldInformation = 0;
 	if (getReqLevel() > 0) {
-		wieldInfo |= WIELDINFO_LEVEL;
+		wieldInformation |= WIELDINFO_LEVEL;
 	}
 
 	if (getReqMagLv() > 0) {
-		wieldInfo |= WIELDINFO_MAGLV;
+		wieldInformation |= WIELDINFO_MAGLV;
 	}
 
 	if (!vocationString.empty()) {
-		wieldInfo |= WIELDINFO_VOCREQ;
+		wieldInformation |= WIELDINFO_VOCREQ;
 	}
 
 	if (isPremium()) {
-		wieldInfo |= WIELDINFO_PREMIUM;
+		wieldInformation |= WIELDINFO_PREMIUM;
 	}
 
-	if (wieldInfo != 0) {
+	if (wieldInformation != 0) {
 		ItemType& it = Item::items.getItemType(id);
-		it.wieldInfo = wieldInfo;
+		it.wieldInfo = wieldInformation;
 		it.vocationString = vocationString;
 		it.minReqLevel = getReqLevel();
 		it.minReqMagicLevel = getReqMagLv();
@@ -301,7 +305,7 @@ int32_t Weapon::playerWeaponCheck(Player* player, Creature* target, uint8_t shoo
 		if (player->getMana() < getManaCost(player)) {
 			return 0;
 		}
-
+		
 		if (player->getHealth() < getHealthCost(player)) {
 			return 0;
 		}
@@ -384,8 +388,8 @@ void Weapon::internalUseWeapon(Player* player, Item* item, Creature* target, int
 		executeUseWeapon(player, var);
 	} else {
 		CombatDamage damage;
-		WeaponType_t weaponType = item->getWeaponType();
-		if (weaponType == WEAPON_AMMO || weaponType == WEAPON_DISTANCE) {
+		WeaponType_t localWeaponType = item->getWeaponType();
+		if (localWeaponType == WEAPON_AMMO || localWeaponType == WEAPON_DISTANCE) {
 			damage.origin = ORIGIN_RANGED;
 		} else {
 			damage.origin = ORIGIN_MELEE;
@@ -430,7 +434,7 @@ void Weapon::onUsedWeapon(Player* player, Item* item, Tile* destTile) const
 		player->addManaSpent(manaCost);
 		player->changeMana(-static_cast<int32_t>(manaCost));
 	}
-
+	
 	uint32_t healthCost = getHealthCost(player);
 	if (healthCost != 0) {
 		player->changeHealth(-static_cast<int32_t>(healthCost));
@@ -442,17 +446,21 @@ void Weapon::onUsedWeapon(Player* player, Item* item, Tile* destTile) const
 
 	if (breakChance != 0 && uniform_random(1, 100) <= breakChance) {
 		Weapon::decrementItemCount(item);
+		player->updateSupplyTracker(item);
 		return;
 	}
 
 	switch (action) {
 		case WEAPONACTION_REMOVECOUNT:
-			Weapon::decrementItemCount(item);
+			if(g_config.getBoolean(ConfigManager::REMOVE_WEAPON_AMMO)) {
+				Weapon::decrementItemCount(item);
+				player->updateSupplyTracker(item);
+			}
 			break;
 
 		case WEAPONACTION_REMOVECHARGE: {
 			uint16_t charges = item->getCharges();
-			if (charges != 0) {
+			if (charges != 0 && g_config.getBoolean(ConfigManager::REMOVE_WEAPON_CHARGES)) {
 				g_game.transformItem(item, item->getID(), charges - 1);
 			}
 			break;
@@ -486,11 +494,11 @@ int32_t Weapon::getHealthCost(const Player* player) const
 		return health;
 	}
 
-	if (healthPercent == 0) {
+ 	if (healthPercent == 0) {
 		return 0;
 	}
 
-	return (player->getMaxHealth() * healthPercent) / 100;
+ 	return (player->getMaxHealth() * healthPercent) / 100;
 }
 
 bool Weapon::executeUseWeapon(Player* player, const LuaVariant& var) const
@@ -558,7 +566,7 @@ bool WeaponMelee::useWeapon(Player* player, Item* item, Creature* target) const
 }
 
 bool WeaponMelee::getSkillType(const Player* player, const Item* item,
-                               skills_t& skill, uint32_t& skillpoint) const
+	skills_t& skill, uint32_t& skillpoint) const
 {
 	if (player->getAddAttackSkill() && player->getLastAttackBlockType() != BLOCK_IMMUNITY) {
 		skillpoint = 1;
@@ -566,8 +574,8 @@ bool WeaponMelee::getSkillType(const Player* player, const Item* item,
 		skillpoint = 0;
 	}
 
-	WeaponType_t weaponType = item->getWeaponType();
-	switch (weaponType) {
+	WeaponType_t localWeaponType = item->getWeaponType();
+	switch (localWeaponType) {
 		case WEAPON_SWORD: {
 			skill = SKILL_SWORD;
 			return true;
@@ -904,26 +912,23 @@ bool WeaponWand::configureEvent(const pugi::xml_node& node)
 		maxChange = pugi::cast<int32_t>(attr.value());
 	}
 
-	attr = node.attribute("type");
-	if (!attr) {
-		return true;
-	}
-
-	std::string tmpStrValue = asLowerCaseString(attr.as_string());
-	if (!tfs_strcmp(tmpStrValue.c_str(), "earth")) {
-		params.combatType = COMBAT_EARTHDAMAGE;
-	} else if (!tfs_strcmp(tmpStrValue.c_str(), "ice")) {
-		params.combatType = COMBAT_ICEDAMAGE;
-	} else if (!tfs_strcmp(tmpStrValue.c_str(), "energy")) {
-		params.combatType = COMBAT_ENERGYDAMAGE;
-	} else if (!tfs_strcmp(tmpStrValue.c_str(), "fire")) {
-		params.combatType = COMBAT_FIREDAMAGE;
-	} else if (!tfs_strcmp(tmpStrValue.c_str(), "death")) {
-		params.combatType = COMBAT_DEATHDAMAGE;
-	} else if (!tfs_strcmp(tmpStrValue.c_str(), "holy")) {
-		params.combatType = COMBAT_HOLYDAMAGE;
-	} else {
-		std::cout << "[Warning - WeaponWand::configureEvent] Type \"" << attr.as_string() << "\" does not exist." << std::endl;
+	if ((attr = node.attribute("type"))) {
+		std::string tmpStrValue = asLowerCaseString(attr.as_string());
+		if (tmpStrValue == "earth") {
+			params.combatType = COMBAT_EARTHDAMAGE;
+		} else if (tmpStrValue == "ice") {
+			params.combatType = COMBAT_ICEDAMAGE;
+		} else if (tmpStrValue == "energy") {
+			params.combatType = COMBAT_ENERGYDAMAGE;
+		} else if (tmpStrValue == "fire") {
+			params.combatType = COMBAT_FIREDAMAGE;
+		} else if (tmpStrValue == "death") {
+			params.combatType = COMBAT_DEATHDAMAGE;
+		} else if (tmpStrValue == "holy") {
+			params.combatType = COMBAT_HOLYDAMAGE;
+		} else {
+			std::cout << "[Warning - WeaponWand::configureEvent] Type \"" << attr.as_string() << "\" does not exist." << std::endl;
+		}
 	}
 	return true;
 }

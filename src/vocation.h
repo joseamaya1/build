@@ -1,6 +1,8 @@
 /**
+ * @file vocation.h
+ * 
  * The Forgotten Server - a free and open-source MMORPG server emulator
- * Copyright (C) 2019  Mark Samman <mark.samman@gmail.com>
+ * Copyright (C) 2019 Mark Samman <mark.samman@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,8 +19,8 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#ifndef FS_VOCATION_H_ADCAA356C0DB44CEBA994A0D678EC92D
-#define FS_VOCATION_H_ADCAA356C0DB44CEBA994A0D678EC92D
+#ifndef OT_SRC_VOCATION_H_
+#define OT_SRC_VOCATION_H_
 
 #include "enums.h"
 #include "item.h"
@@ -26,7 +28,7 @@
 class Vocation
 {
 	public:
-		explicit Vocation(uint16_t id) : id(id) {}
+		explicit Vocation(uint16_t initId) : id(initId) {}
 
 		const std::string& getVocName() const {
 			return name;
@@ -91,7 +93,7 @@ class Vocation
 		float defenseMultiplier = 1.0f;
 		float armorMultiplier = 1.0f;
 
-	private:
+	protected:
 		friend class Vocations;
 
 		std::map<uint32_t, uint64_t> cacheMana;
@@ -114,6 +116,7 @@ class Vocation
 		uint32_t attackSpeed = 1500;
 		uint32_t baseSpeed = 220;
 		uint16_t id;
+
 
 		uint16_t gainSoulTicks = 120;
 

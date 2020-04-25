@@ -1,6 +1,8 @@
 /**
+ * @file wildcardtree.cpp
+ * 
  * The Forgotten Server - a free and open-source MMORPG server emulator
- * Copyright (C) 2019  Mark Samman <mark.samman@gmail.com>
+ * Copyright (C) 2019 Mark Samman <mark.samman@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -41,16 +43,16 @@ const WildcardTreeNode* WildcardTreeNode::getChild(char ch) const
 	return &it->second;
 }
 
-WildcardTreeNode* WildcardTreeNode::addChild(char ch, bool breakpoint)
+WildcardTreeNode* WildcardTreeNode::addChild(char ch, bool breakp)
 {
 	WildcardTreeNode* child = getChild(ch);
 	if (child) {
-		if (breakpoint && !child->breakpoint) {
+		if (breakp && !child->breakpoint) {
 			child->breakpoint = true;
 		}
 	} else {
 		auto pair = children.emplace(std::piecewise_construct,
-				std::forward_as_tuple(ch), std::forward_as_tuple(breakpoint));
+				std::forward_as_tuple(ch), std::forward_as_tuple(breakp));
 		child = &pair.first->second;
 	}
 	return child;

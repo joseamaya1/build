@@ -1,6 +1,8 @@
 /**
+ * @file tile.h
+ * 
  * The Forgotten Server - a free and open-source MMORPG server emulator
- * Copyright (C) 2019  Mark Samman <mark.samman@gmail.com>
+ * Copyright (C) 2019 Mark Samman <mark.samman@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,8 +19,10 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#ifndef FS_TILE_H_96C7EE7CF8CD48E59D5D554A181F0C56
-#define FS_TILE_H_96C7EE7CF8CD48E59D5D554A181F0C56
+#ifndef OT_SRC_TILE_H_
+#define OT_SRC_TILE_H_
+
+#include <unordered_set>
 
 #include "cylinder.h"
 #include "item.h"
@@ -34,6 +38,7 @@ class BedItem;
 
 using CreatureVector = std::vector<Creature*>;
 using ItemVector = std::vector<Item*>;
+using SpectatorHashSet = std::unordered_set<Creature*>;
 
 enum tileflags_t : uint32_t {
 	TILESTATE_NONE = 0,
@@ -72,43 +77,6 @@ enum ZoneType_t {
 	ZONE_PVP,
 	ZONE_NOLOGOUT,
 	ZONE_NORMAL,
-};
-
-class SpectatorVector : public CreatureVector
-{
-	public:
-		void mergeSpectators(const SpectatorVector& spectators) {
-			size_t it = 0, end = spectators.size();
-			while (it < end) {
-				Creature* spectator = spectators[it];
-
-				size_t cit = 0, cend = size();
-				while (cit < cend) {
-					if (operator[](cit) == spectator) {
-						goto Skip_Duplicate;
-					} else {
-						++cit;
-					}
-				}
-
-				emplace_back(spectator);
-				Skip_Duplicate:
-				++it;
-			}
-		}
-
-		void erase(Creature* spectator) {
-			size_t it = 0, end = size();
-			while (it < end) {
-				if (operator[](it) == spectator) {
-					std::swap(operator[](it), back());
-					pop_back();
-					return;
-				} else {
-					++it;
-				}
-			}
-		}
 };
 
 class TileItemVector : private ItemVector
@@ -178,7 +146,7 @@ class TileItemVector : private ItemVector
 		}
 
 	private:
-		uint16_t downItemCount = 0;
+		uint32_t downItemCount = 0;
 };
 
 class Tile : public Cylinder
@@ -297,7 +265,6 @@ class Tile : public Cylinder
 
 		void postAddNotification(Thing* thing, const Cylinder* oldParent, int32_t index, cylinderlink_t link = LINK_OWNER) override final;
 		void postRemoveNotification(Thing* thing, const Cylinder* newParent, int32_t index, cylinderlink_t link = LINK_OWNER) override final;
-
 		void internalAddThing(Thing* thing) override final;
 		void internalAddThing(uint32_t index, Thing* thing) override;
 
@@ -321,12 +288,13 @@ class Tile : public Cylinder
 	private:
 		void onAddTileItem(Item* item);
 		void onUpdateTileItem(Item* oldItem, const ItemType& oldType, Item* newItem, const ItemType& newType);
-		void onRemoveTileItem(const SpectatorVector& spectators, const std::vector<int32_t>& oldStackPosVector, Item* item);
-		void onUpdateTile(const SpectatorVector& spectators);
+		void onRemoveTileItem(const SpectatorHashSet& spectators, const std::vector<int32_t>& oldStackPosVector, Item* item);
+		void onUpdateTile(const SpectatorHashSet& spectators);
 
 		void setTileFlags(const Item* item);
 		void resetTileFlags(const Item* item);
 
+	protected:
 		Item* ground = nullptr;
 		Position tilePos;
 		uint32_t flags = 0;

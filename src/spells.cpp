@@ -1,6 +1,8 @@
 /**
+ * @file spells.cpp
+ * 
  * The Forgotten Server - a free and open-source MMORPG server emulator
- * Copyright (C) 2019  Mark Samman <mark.samman@gmail.com>
+ * Copyright (C) 2019 Mark Samman <mark.samman@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -36,7 +38,6 @@ extern LuaEnvironment g_luaEnvironment;
 Spells::Spells()
 {
 	scriptInterface.initState();
-	instants.reserve(1000);
 }
 
 Spells::~Spells()
@@ -44,33 +45,57 @@ Spells::~Spells()
 	clear(false);
 }
 
-TalkActionResult_t Spells::playerSaySpell(Player* player, std::string& words, const std::string& lowerWords)
+TalkActionResult_t Spells::playerSaySpell(Player* player, std::string& words)
 {
-	std::string param, instantWords = lowerWords;
-	if (instantWords.size() >= 4 && instantWords.front() != '"') {
-		size_t param_find = instantWords.find('"');
-		if (param_find != std::string::npos && instantWords[param_find - 1] == ' ') {
-			if (instantWords.back() == '"') {
-				instantWords.pop_back();
-			}
-			param = instantWords.substr(param_find + 1);
-			instantWords = instantWords.substr(0, param_find);
-			trim_right(instantWords, ' ');
-		}
+	std::string str_words = words;
+
+	//strip trailing spaces
+	trimString(str_words);
+
+	InstantSpell* instantSpell = getInstantSpell(str_words);
+	if (!instantSpell) {
+		return TALKACTION_CONTINUE;
 	}
 
-	InstantSpell* instantSpell = getInstantSpell(instantWords);
-	if (!instantSpell || (!param.empty() && !instantSpell->getHasParam()) || (param.empty() && instantSpell->getHasParam())) {
-		return TALKACTION_CONTINUE;
+	std::string param;
+
+	if (instantSpell->getHasParam()) {
+		size_t spellLen = instantSpell->getWords().length();
+		size_t paramLen = str_words.length() - spellLen;
+		std::string paramText = str_words.substr(spellLen, paramLen);
+		if (!paramText.empty() && paramText.front() == ' ') {
+			size_t loc1 = paramText.find('"', 1);
+			if (loc1 != std::string::npos) {
+				size_t loc2 = paramText.find('"', loc1 + 1);
+				if (loc2 == std::string::npos) {
+					loc2 = paramText.length();
+				} else if (paramText.find_last_not_of(' ') != loc2) {
+					return TALKACTION_CONTINUE;
+				}
+
+				param = paramText.substr(loc1 + 1, loc2 - loc1 - 1);
+			} else {
+				trimString(paramText);
+				loc1 = paramText.find(' ', 0);
+				if (loc1 == std::string::npos) {
+					param = paramText;
+				} else {
+					return TALKACTION_CONTINUE;
+				}
+			}
+		}
 	}
 
 	if (instantSpell->playerCastInstant(player, param)) {
 		words = instantSpell->getWords();
+
 		if (instantSpell->getHasParam() && !param.empty()) {
 			words += " \"" + param + "\"";
 		}
+
 		return TALKACTION_BREAK;
 	}
+
 	return TALKACTION_FAILED;
 }
 
@@ -173,17 +198,16 @@ bool Spells::registerRuneLuaEvent(RuneSpell* event)
 	return false;
 }
 
-std::vector<uint16_t> Spells::getSpellsByVocation(uint16_t vocationId)
+std::list<uint16_t> Spells::getSpellsByVocation(uint16_t vocationId)
 {
-	std::vector<uint16_t> spells;
-	spells.reserve(30);
+	std::list<uint16_t> spellsList;
 	for (const auto& it : instants) {
 		VocSpellMap map = it.second.getVocMap();
 		if (map.find(vocationId)->second) {
-			spells.emplace_back(it.second.getId());
+			spellsList.push_back(it.second.getId());
 		}
 	}
-	return spells;
+	return spellsList;
 }
 
 Spell* Spells::getSpellByName(const std::string& name)
@@ -221,9 +245,35 @@ RuneSpell* Spells::getRuneSpellByName(const std::string& name)
 
 InstantSpell* Spells::getInstantSpell(const std::string& words)
 {
-	auto it = instants.find(words);
-	if (it != instants.end()) {
-		return &it->second;
+	InstantSpell* result = nullptr;
+
+	for (auto& it : instants) {
+		const std::string& instantSpellWords = it.second.getWords();
+		size_t spellLen = instantSpellWords.length();
+		if (strncasecmp(instantSpellWords.c_str(), words.c_str(), spellLen) == 0) {
+			if (!result || spellLen > result->getWords().length()) {
+				result = &it.second;
+				if (words.length() == spellLen) {
+					break;
+				}
+			}
+		}
+	}
+
+	if (result) {
+		const std::string& resultWords = result->getWords();
+		if (words.length() > resultWords.length()) {
+			if (!result->getHasParam()) {
+				return nullptr;
+			}
+
+			size_t spellLen = resultWords.length();
+			size_t paramLen = words.length() - spellLen;
+			if (paramLen < 2 || words[spellLen] != ' ') {
+				return nullptr;
+			}
+		}
+		return result;
 	}
 	return nullptr;
 }
@@ -253,11 +303,11 @@ Position Spells::getCasterPosition(Creature* creature, Direction dir)
 	return getNextPosition(dir, creature->getPosition());
 }
 
-CombatSpell::CombatSpell(Combat* combat, bool needTarget, bool needDirection) :
+CombatSpell::CombatSpell(Combat* initCombat, bool initNeedTarget, bool initNeedDirection) :
 	Event(&g_spells->getScriptInterface()),
-	combat(combat),
-	needDirection(needDirection),
-	needTarget(needTarget)
+	combat(initCombat),
+	needDirection(initNeedDirection),
+	needTarget(initNeedTarget)
 {}
 
 CombatSpell::~CombatSpell()
@@ -392,6 +442,8 @@ bool Spell::configureSpell(const pugi::xml_node& node)
 		"dazzlecondition"
 	};
 
+	//static size_t size = sizeof(reservedList) / sizeof(const char*);
+	//for (size_t i = 0; i < size; ++i) {
 	for (const char* reserved : reservedList) {
 		if (strcasecmp(reserved, name.c_str()) == 0) {
 			std::cout << "[Error - Spell::configureSpell] Spell is using a reserved name: " << reserved << std::endl;
@@ -406,15 +458,15 @@ bool Spell::configureSpell(const pugi::xml_node& node)
 
 	if ((attr = node.attribute("group"))) {
 		std::string tmpStr = asLowerCaseString(attr.as_string());
-		if (!tfs_strcmp(tmpStr.c_str(), "none") || !tfs_strcmp(tmpStr.c_str(), "0")) {
+		if (tmpStr == "none" || tmpStr == "0") {
 			group = SPELLGROUP_NONE;
-		} else if (!tfs_strcmp(tmpStr.c_str(), "attack") || !tfs_strcmp(tmpStr.c_str(), "1")) {
+		} else if (tmpStr == "attack" || tmpStr == "1") {
 			group = SPELLGROUP_ATTACK;
-		} else if (!tfs_strcmp(tmpStr.c_str(), "healing") || !tfs_strcmp(tmpStr.c_str(), "2")) {
+		} else if (tmpStr == "healing" || tmpStr == "2") {
 			group = SPELLGROUP_HEALING;
-		} else if (!tfs_strcmp(tmpStr.c_str(), "support") || !tfs_strcmp(tmpStr.c_str(), "3")) {
+		} else if (tmpStr == "support" || tmpStr == "3") {
 			group = SPELLGROUP_SUPPORT;
-		} else if (!tfs_strcmp(tmpStr.c_str(), "special") || !tfs_strcmp(tmpStr.c_str(), "4")) {
+		} else if (tmpStr == "special" || tmpStr == "4") {
 			group = SPELLGROUP_SPECIAL;
 		} else {
 			std::cout << "[Warning - Spell::configureSpell] Unknown group: " << attr.as_string() << std::endl;
@@ -427,15 +479,15 @@ bool Spell::configureSpell(const pugi::xml_node& node)
 
 	if ((attr = node.attribute("secondarygroup"))) {
 		std::string tmpStr = asLowerCaseString(attr.as_string());
-		if (!tfs_strcmp(tmpStr.c_str(), "none") || !tfs_strcmp(tmpStr.c_str(), "0")) {
+		if (tmpStr == "none" || tmpStr == "0") {
 			secondaryGroup = SPELLGROUP_NONE;
-		} else if (!tfs_strcmp(tmpStr.c_str(), "attack") || !tfs_strcmp(tmpStr.c_str(), "1")) {
+		} else if (tmpStr == "attack" || tmpStr == "1") {
 			secondaryGroup = SPELLGROUP_ATTACK;
-		} else if (!tfs_strcmp(tmpStr.c_str(), "healing") || !tfs_strcmp(tmpStr.c_str(), "2")) {
+		} else if (tmpStr == "healing" || tmpStr == "2") {
 			secondaryGroup = SPELLGROUP_HEALING;
-		} else if (!tfs_strcmp(tmpStr.c_str(), "support") || !tfs_strcmp(tmpStr.c_str(), "3")) {
+		} else if (tmpStr == "support" || tmpStr == "3") {
 			secondaryGroup = SPELLGROUP_SUPPORT;
-		} else if (!tfs_strcmp(tmpStr.c_str(), "special") || !tfs_strcmp(tmpStr.c_str(), "4")) {
+		} else if (tmpStr == "special" || tmpStr == "4") {
 			secondaryGroup = SPELLGROUP_SPECIAL;
 		} else {
 			std::cout << "[Warning - Spell::configureSpell] Unknown secondarygroup: " << attr.as_string() << std::endl;
@@ -505,12 +557,12 @@ bool Spell::configureSpell(const pugi::xml_node& node)
 
 	if ((attr = node.attribute("blocktype"))) {
 		std::string tmpStrValue = asLowerCaseString(attr.as_string());
-		if (!tfs_strcmp(tmpStrValue.c_str(), "all")) {
+		if (tmpStrValue == "all") {
 			blockingSolid = true;
 			blockingCreature = true;
-		} else if (!tfs_strcmp(tmpStrValue.c_str(), "solid")) {
+		} else if (tmpStrValue == "solid") {
 			blockingSolid = true;
-		} else if (!tfs_strcmp(tmpStrValue.c_str(), "creature")) {
+		} else if (tmpStrValue == "creature") {
 			blockingCreature = true;
 		} else {
 			std::cout << "[Warning - Spell::configureSpell] Blocktype \"" << attr.as_string() << "\" does not exist." << std::endl;
@@ -566,7 +618,7 @@ bool Spell::playerSpellCheck(Player* player) const
 		return false;
 	}
 
-  if (aggressive && !player->hasFlag(PlayerFlag_IgnoreProtectionZone) && player->getZone() == ZONE_PROTECTION) {
+	if (aggressive && !player->hasFlag(PlayerFlag_IgnoreProtectionZone) && player->getZone() == ZONE_PROTECTION) {
 		player->sendCancelMessage(RETURNVALUE_ACTIONNOTPERMITTEDINPROTECTIONZONE);
 		return false;
 	}
@@ -801,12 +853,17 @@ void Spell::postCastSpell(Player* player, uint32_t manaCost, uint32_t soulCost)
 
 uint32_t Spell::getManaCost(const Player* player) const
 {
-	uint32_t manaCost = mana;
-	if (manaPercent != 0) {
-		manaCost += (player->getMaxMana() * manaPercent) / 100;
+	if (mana != 0) {
+		return mana;
 	}
 
-	return manaCost;
+	if (manaPercent != 0) {
+		uint32_t maxMana = player->getMaxMana();
+		uint32_t manaCost = (maxMana * manaPercent) / 100;
+		return manaCost;
+	}
+
+	return 0;
 }
 
 std::string InstantSpell::getScriptEventName() const
@@ -1191,6 +1248,7 @@ bool RuneSpell::executeUse(Player* player, Item* item, const Position&, Thing* t
 	if (hasCharges && item && g_config.getBoolean(ConfigManager::REMOVE_RUNE_CHARGES)) {
 		int32_t newCount = std::max<int32_t>(0, item->getItemCount() - 1);
 		g_game.transformItem(item, item->getID(), newCount);
+		player->updateSupplyTracker(item);
 	}
 	return true;
 }

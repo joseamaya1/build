@@ -1,6 +1,8 @@
 /**
+ * @file tools.cpp
+ * 
  * The Forgotten Server - a free and open-source MMORPG server emulator
- * Copyright (C) 2019  Mark Samman <mark.samman@gmail.com>
+ * Copyright (C) 2019 Mark Samman <mark.samman@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -73,184 +75,13 @@ void printXMLError(const std::string& where, const std::string& fileName, const 
 	std::cout << '^' << std::endl;
 }
 
+static uint32_t circularShift(int bits, uint32_t value)
+{
+	return (value << bits) | (value >> (32 - bits));
+}
+
 static void processSHA1MessageBlock(const uint8_t* messageBlock, uint32_t* H)
 {
-	#if defined(__SHA__)
-	const __m128i MASK = _mm_set_epi64x(0x0001020304050607ULL, 0x08090A0B0C0D0E0FULL);
-
-	__m128i ABCD = _mm_load_si128(reinterpret_cast<const __m128i*>(H));
-	__m128i E0 = _mm_set_epi32(H[4], 0, 0, 0);
-	ABCD = _mm_shuffle_epi32(ABCD, 0x1B);
-
-	// Save current state
-	__m128i ABCD_SAVE = ABCD;
-	__m128i E0_SAVE = E0;
-
-	// Rounds 0-3
-	__m128i MSG0 = _mm_shuffle_epi8(_mm_load_si128(reinterpret_cast<const __m128i*>(messageBlock + 0)), MASK);
-	E0 = _mm_add_epi32(E0, MSG0);
-	__m128i E1 = ABCD;
-	ABCD = _mm_sha1rnds4_epu32(ABCD, E0, 0);
-
-	// Rounds 4-7
-	__m128i MSG1 = _mm_shuffle_epi8(_mm_load_si128(reinterpret_cast<const __m128i*>(messageBlock + 16)), MASK);
-	E1 = _mm_sha1nexte_epu32(E1, MSG1);
-	E0 = ABCD;
-	ABCD = _mm_sha1rnds4_epu32(ABCD, E1, 0);
-	MSG0 = _mm_sha1msg1_epu32(MSG0, MSG1);
-
-	// Rounds 8-11
-	__m128i MSG2 = _mm_shuffle_epi8(_mm_load_si128(reinterpret_cast<const __m128i*>(messageBlock + 32)), MASK);
-	E0 = _mm_sha1nexte_epu32(E0, MSG2);
-	E1 = ABCD;
-	ABCD = _mm_sha1rnds4_epu32(ABCD, E0, 0);
-	MSG1 = _mm_sha1msg1_epu32(MSG1, MSG2);
-	MSG0 = _mm_xor_si128(MSG0, MSG2);
-
-	// Rounds 12-15
-	__m128i MSG3 = _mm_shuffle_epi8(_mm_load_si128(reinterpret_cast<const __m128i*>(messageBlock + 48)), MASK);
-	E1 = _mm_sha1nexte_epu32(E1, MSG3);
-	E0 = ABCD;
-	MSG0 = _mm_sha1msg2_epu32(MSG0, MSG3);
-	ABCD = _mm_sha1rnds4_epu32(ABCD, E1, 0);
-	MSG2 = _mm_sha1msg1_epu32(MSG2, MSG3);
-	MSG1 = _mm_xor_si128(MSG1, MSG3);
-
-	// Rounds 16-19
-	E0 = _mm_sha1nexte_epu32(E0, MSG0);
-	E1 = ABCD;
-	MSG1 = _mm_sha1msg2_epu32(MSG1, MSG0);
-	ABCD = _mm_sha1rnds4_epu32(ABCD, E0, 0);
-	MSG3 = _mm_sha1msg1_epu32(MSG3, MSG0);
-	MSG2 = _mm_xor_si128(MSG2, MSG0);
-
-	// Rounds 20-23
-	E1 = _mm_sha1nexte_epu32(E1, MSG1);
-	E0 = ABCD;
-	MSG2 = _mm_sha1msg2_epu32(MSG2, MSG1);
-	ABCD = _mm_sha1rnds4_epu32(ABCD, E1, 1);
-	MSG0 = _mm_sha1msg1_epu32(MSG0, MSG1);
-	MSG3 = _mm_xor_si128(MSG3, MSG1);
-
-	// Rounds 24-27
-	E0 = _mm_sha1nexte_epu32(E0, MSG2);
-	E1 = ABCD;
-	MSG3 = _mm_sha1msg2_epu32(MSG3, MSG2);
-	ABCD = _mm_sha1rnds4_epu32(ABCD, E0, 1);
-	MSG1 = _mm_sha1msg1_epu32(MSG1, MSG2);
-	MSG0 = _mm_xor_si128(MSG0, MSG2);
-
-	// Rounds 28-31
-	E1 = _mm_sha1nexte_epu32(E1, MSG3);
-	E0 = ABCD;
-	MSG0 = _mm_sha1msg2_epu32(MSG0, MSG3);
-	ABCD = _mm_sha1rnds4_epu32(ABCD, E1, 1);
-	MSG2 = _mm_sha1msg1_epu32(MSG2, MSG3);
-	MSG1 = _mm_xor_si128(MSG1, MSG3);
-
-	// Rounds 32-35
-	E0 = _mm_sha1nexte_epu32(E0, MSG0);
-	E1 = ABCD;
-	MSG1 = _mm_sha1msg2_epu32(MSG1, MSG0);
-	ABCD = _mm_sha1rnds4_epu32(ABCD, E0, 1);
-	MSG3 = _mm_sha1msg1_epu32(MSG3, MSG0);
-	MSG2 = _mm_xor_si128(MSG2, MSG0);
-
-	// Rounds 36-39
-	E1 = _mm_sha1nexte_epu32(E1, MSG1);
-	E0 = ABCD;
-	MSG2 = _mm_sha1msg2_epu32(MSG2, MSG1);
-	ABCD = _mm_sha1rnds4_epu32(ABCD, E1, 1);
-	MSG0 = _mm_sha1msg1_epu32(MSG0, MSG1);
-	MSG3 = _mm_xor_si128(MSG3, MSG1);
-
-	// Rounds 40-43
-	E0 = _mm_sha1nexte_epu32(E0, MSG2);
-	E1 = ABCD;
-	MSG3 = _mm_sha1msg2_epu32(MSG3, MSG2);
-	ABCD = _mm_sha1rnds4_epu32(ABCD, E0, 2);
-	MSG1 = _mm_sha1msg1_epu32(MSG1, MSG2);
-	MSG0 = _mm_xor_si128(MSG0, MSG2);
-
-	// Rounds 44-47
-	E1 = _mm_sha1nexte_epu32(E1, MSG3);
-	E0 = ABCD;
-	MSG0 = _mm_sha1msg2_epu32(MSG0, MSG3);
-	ABCD = _mm_sha1rnds4_epu32(ABCD, E1, 2);
-	MSG2 = _mm_sha1msg1_epu32(MSG2, MSG3);
-	MSG1 = _mm_xor_si128(MSG1, MSG3);
-
-	// Rounds 48-51
-	E0 = _mm_sha1nexte_epu32(E0, MSG0);
-	E1 = ABCD;
-	MSG1 = _mm_sha1msg2_epu32(MSG1, MSG0);
-	ABCD = _mm_sha1rnds4_epu32(ABCD, E0, 2);
-	MSG3 = _mm_sha1msg1_epu32(MSG3, MSG0);
-	MSG2 = _mm_xor_si128(MSG2, MSG0);
-
-	// Rounds 52-55
-	E1 = _mm_sha1nexte_epu32(E1, MSG1);
-	E0 = ABCD;
-	MSG2 = _mm_sha1msg2_epu32(MSG2, MSG1);
-	ABCD = _mm_sha1rnds4_epu32(ABCD, E1, 2);
-	MSG0 = _mm_sha1msg1_epu32(MSG0, MSG1);
-	MSG3 = _mm_xor_si128(MSG3, MSG1);
-
-	// Rounds 56-59
-	E0 = _mm_sha1nexte_epu32(E0, MSG2);
-	E1 = ABCD;
-	MSG3 = _mm_sha1msg2_epu32(MSG3, MSG2);
-	ABCD = _mm_sha1rnds4_epu32(ABCD, E0, 2);
-	MSG1 = _mm_sha1msg1_epu32(MSG1, MSG2);
-	MSG0 = _mm_xor_si128(MSG0, MSG2);
-
-	// Rounds 60-63
-	E1 = _mm_sha1nexte_epu32(E1, MSG3);
-	E0 = ABCD;
-	MSG0 = _mm_sha1msg2_epu32(MSG0, MSG3);
-	ABCD = _mm_sha1rnds4_epu32(ABCD, E1, 3);
-	MSG2 = _mm_sha1msg1_epu32(MSG2, MSG3);
-	MSG1 = _mm_xor_si128(MSG1, MSG3);
-
-	// Rounds 64-67
-	E0 = _mm_sha1nexte_epu32(E0, MSG0);
-	E1 = ABCD;
-	MSG1 = _mm_sha1msg2_epu32(MSG1, MSG0);
-	ABCD = _mm_sha1rnds4_epu32(ABCD, E0, 3);
-	MSG3 = _mm_sha1msg1_epu32(MSG3, MSG0);
-	MSG2 = _mm_xor_si128(MSG2, MSG0);
-
-	// Rounds 68-71
-	E1 = _mm_sha1nexte_epu32(E1, MSG1);
-	E0 = ABCD;
-	MSG2 = _mm_sha1msg2_epu32(MSG2, MSG1);
-	ABCD = _mm_sha1rnds4_epu32(ABCD, E1, 3);
-	MSG3 = _mm_xor_si128(MSG3, MSG1);
-
-	// Rounds 72-75
-	E0 = _mm_sha1nexte_epu32(E0, MSG2);
-	E1 = ABCD;
-	MSG3 = _mm_sha1msg2_epu32(MSG3, MSG2);
-	ABCD = _mm_sha1rnds4_epu32(ABCD, E0, 3);
-
-	// Rounds 76-79
-	E1 = _mm_sha1nexte_epu32(E1, MSG3);
-	E0 = ABCD;
-	ABCD = _mm_sha1rnds4_epu32(ABCD, E1, 3);
-
-	// Combine state
-	E0 = _mm_sha1nexte_epu32(E0, E0_SAVE);
-	ABCD = _mm_add_epi32(ABCD, ABCD_SAVE);
-
-	// Save state
-	ABCD = _mm_shuffle_epi32(ABCD, 0x1B);
-	_mm_store_si128(reinterpret_cast<__m128i*>(H), ABCD);
-	H[4] = _mm_extract_epi32(E0, 3);
-	#else
-	auto circularShift = [](int32_t bits, uint32_t value) {
-		return (value << bits) | (value >> (32 - bits));
-	};
-
 	uint32_t W[80];
 	for (int i = 0; i < 16; ++i) {
 		const size_t offset = i << 2;
@@ -288,7 +119,6 @@ static void processSHA1MessageBlock(const uint8_t* messageBlock, uint32_t* H)
 	H[2] += C;
 	H[3] += D;
 	H[4] += E;
-	#endif
 }
 
 std::string transformToSHA1(const std::string& input)
@@ -383,17 +213,17 @@ std::string generateToken(const std::string& key, uint32_t ticks)
 
 	// hmac concat outer pad with message, conversion from hex to int needed
 	for (uint8_t i = 0; i < message.length(); i += 2) {
-		oKeyPad.push_back(static_cast<char>(std::strtoul(message.substr(i, 2).c_str(), nullptr, 16)));
+		oKeyPad.push_back(static_cast<char>(std::stol(message.substr(i, 2), nullptr, 16)));
 	}
 
 	// hmac second pass
 	message.assign(transformToSHA1(oKeyPad));
 
 	// calculate hmac offset
-	uint32_t offset = static_cast<uint32_t>(std::strtoul(message.substr(39, 1).c_str(), nullptr, 16) & 0xF);
+	uint32_t offset = static_cast<uint32_t>(std::stol(message.substr(39, 1), nullptr, 16) & 0xF);
 
 	// get truncated hash
-	uint32_t truncHash = static_cast<uint32_t>(std::strtoul(message.substr(2 * offset, 8).c_str(), nullptr, 16)) & 0x7FFFFFFF;
+	uint32_t truncHash = std::stol(message.substr(2 * offset, 8), nullptr, 16) & 0x7FFFFFFF;
 	message.assign(std::to_string(truncHash));
 
 	// return only last AUTHENTICATOR_DIGITS (default 6) digits, also asserts exactly 6 digits
@@ -409,6 +239,7 @@ void replaceString(std::string& str, const std::string& sought, const std::strin
 	size_t start = 0;
 	size_t soughtLen = sought.length();
 	size_t replaceLen = replacement.length();
+
 	while ((pos = str.find(sought, start)) != std::string::npos) {
 		str = str.substr(0, pos) + replacement + str.substr(pos + soughtLen);
 		start = pos + replaceLen;
@@ -427,90 +258,7 @@ void trim_left(std::string& source, char t)
 
 void toLowerCaseString(std::string& source)
 {
-	#if defined(__SSE4_2__)
-	const __m128i ranges = _mm_setr_epi8('A', 'Z', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-	__m128i* mem = reinterpret_cast<__m128i*>(&source[0]);
-	const __m128i diff = _mm_set1_epi8(0x20);
-
-	const uint8_t mode = (_SIDD_UBYTE_OPS | _SIDD_CMP_RANGES | _SIDD_UNIT_MASK);
-	for (; ; ++mem) {
-		const __m128i chunk = _mm_loadu_si128(mem);
-		if (_mm_cmpistrc(ranges, chunk, mode)) {
-			const __m128i tmp1 = _mm_cmpistrm(ranges, chunk, mode);
-			const __m128i mask = _mm_and_si128(tmp1, diff);
-			_mm_storeu_si128(mem, _mm_xor_si128(chunk, mask));
-		}
-		if (_mm_cmpistrz(ranges, chunk, mode)) {
-			break;
-		}
-	}
-	#elif defined(__SSE2__)
-	const __m128i ranges1 = _mm_set1_epi8(static_cast<unsigned char>('A' + 128));
-	const __m128i ranges2 = _mm_set1_epi8(-128 + ('Z' - 'A'));
-	const __m128i diff = _mm_set1_epi8(0x20);
-
-	__m128i* mem = reinterpret_cast<__m128i*>(&source[0]);
-	size_t len = source.length();
-	for (; len >= 16; ++mem) {
-		const __m128i chunk = _mm_loadu_si128(mem);
-		const __m128i ranges = _mm_sub_epi8(chunk, ranges1);
-		const __m128i tmp1 = _mm_cmpgt_epi8(ranges, ranges2);
-		const __m128i mask = _mm_andnot_si128(tmp1, diff);
-		_mm_storeu_si128(mem, _mm_xor_si128(chunk, mask));
-		len -= 16;
-	}
-	char* src = reinterpret_cast<char*>(mem);
-	while (len--) {
-		*src = (('A' <= *src && *src <= 'Z') ? *src+0x20 : *src);
-		++src;
-	}
-	#else
 	std::transform(source.begin(), source.end(), source.begin(), tolower);
-	#endif
-}
-
-void toUpperCaseString(std::string& source)
-{
-	#if defined(__SSE4_2__)
-	__m128i* mem = reinterpret_cast<__m128i*>(&source[0]);
-	const __m128i ranges = _mm_setr_epi8('a', 'z', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-	const __m128i diff = _mm_set1_epi8(0x20);
-
-	const uint8_t mode = (_SIDD_UBYTE_OPS | _SIDD_CMP_RANGES | _SIDD_UNIT_MASK);
-	for (; ; ++mem) {
-		const __m128i chunk = _mm_loadu_si128(mem);
-		if (_mm_cmpistrc(ranges, chunk, mode)) {
-			const __m128i tmp1 = _mm_cmpistrm(ranges, chunk, mode);
-			const __m128i mask = _mm_and_si128(tmp1, diff);
-			_mm_storeu_si128(mem, _mm_xor_si128(chunk, mask));
-		}
-		if (_mm_cmpistrz(ranges, chunk, mode)) {
-			break;
-		}
-	}
-	#elif defined(__SSE2__)
-	const __m128i ranges1 = _mm_set1_epi8(static_cast<unsigned char>('a' + 128));
-	const __m128i ranges2 = _mm_set1_epi8(-128 + ('z' - 'a'));
-	const __m128i diff = _mm_set1_epi8(0x20);
-
-	__m128i* mem = reinterpret_cast<__m128i*>(&source[0]);
-	size_t len = source.length();
-	for (; len >= 16; ++mem) {
-		const __m128i chunk = _mm_loadu_si128(mem);
-		const __m128i ranges = _mm_sub_epi8(chunk, ranges1);
-		const __m128i tmp1 = _mm_cmpgt_epi8(ranges, ranges2);
-		const __m128i mask = _mm_andnot_si128(tmp1, diff);
-		_mm_storeu_si128(mem, _mm_xor_si128(chunk, mask));
-		len -= 16;
-	}
-	char* src = reinterpret_cast<char*>(mem);
-	while (len--) {
-		*src = (('a' <= *src && *src <= 'z') ? *src-0x20 : *src);
-		++src;
-	}
-	#else
-	std::transform(source.begin(), source.end(), source.begin(), toupper);
-	#endif
 }
 
 std::string asLowerCaseString(std::string source)
@@ -521,7 +269,7 @@ std::string asLowerCaseString(std::string source)
 
 std::string asUpperCaseString(std::string source)
 {
-	toUpperCaseString(source);
+	std::transform(source.begin(), source.end(), source.begin(), toupper);
 	return source;
 }
 
@@ -529,6 +277,7 @@ StringVector explodeString(const std::string& inString, const std::string& separ
 {
 	StringVector returnVector;
 	std::string::size_type start = 0, end = 0;
+
 	while (--limit != -1 && (end = inString.find(separator, start)) != std::string::npos) {
 		returnVector.push_back(inString.substr(start, end - start));
 		start = end + separator.size();
@@ -645,22 +394,21 @@ Direction getDirection(const std::string& string)
 {
 	Direction direction = DIRECTION_NORTH;
 
-	const char* cstr = string.c_str();
-	if (!tfs_strcmp(cstr, "north") || !tfs_strcmp(cstr, "n") || !tfs_strcmp(cstr, "0")) {
+	if (string == "north" || string == "n" || string == "0") {
 		direction = DIRECTION_NORTH;
-	} else if (!tfs_strcmp(cstr, "east") || !tfs_strcmp(cstr, "e") || !tfs_strcmp(cstr, "1")) {
+	} else if (string == "east" || string == "e" || string == "1") {
 		direction = DIRECTION_EAST;
-	} else if (!tfs_strcmp(cstr, "south") || !tfs_strcmp(cstr, "s") || !tfs_strcmp(cstr, "2")) {
+	} else if (string == "south" || string == "s" || string == "2") {
 		direction = DIRECTION_SOUTH;
-	} else if (!tfs_strcmp(cstr, "west") || !tfs_strcmp(cstr, "w") || !tfs_strcmp(cstr, "3")) {
+	} else if (string == "west" || string == "w" || string == "3") {
 		direction = DIRECTION_WEST;
-	} else if (!tfs_strcmp(cstr, "southwest") || !tfs_strcmp(cstr, "south west") || !tfs_strcmp(cstr, "south-west") || !tfs_strcmp(cstr, "sw") || !tfs_strcmp(cstr, "4")) {
+	} else if (string == "southwest" || string == "south west" || string == "south-west" || string == "sw" || string == "4") {
 		direction = DIRECTION_SOUTHWEST;
-	} else if (!tfs_strcmp(cstr, "southeast") || !tfs_strcmp(cstr, "south east") || !tfs_strcmp(cstr, "south-east") || !tfs_strcmp(cstr, "se") || !tfs_strcmp(cstr, "5")) {
+	} else if (string == "southeast" || string == "south east" || string == "south-east" || string == "se" || string == "5") {
 		direction = DIRECTION_SOUTHEAST;
-	} else if (!tfs_strcmp(cstr, "northwest") || !tfs_strcmp(cstr, "north west") || !tfs_strcmp(cstr, "north-west") || !tfs_strcmp(cstr, "nw") || !tfs_strcmp(cstr, "6")) {
+	} else if (string == "northwest" || string == "north west" || string == "north-west" || string == "nw" || string == "6") {
 		direction = DIRECTION_NORTHWEST;
-	} else if (!tfs_strcmp(cstr, "northeast") || !tfs_strcmp(cstr, "north east") || !tfs_strcmp(cstr, "north-east") || !tfs_strcmp(cstr, "ne") || !tfs_strcmp(cstr, "7")) {
+	} else if (string == "northeast" || string == "north east" || string == "north-east" || string == "ne" || string == "7") {
 		direction = DIRECTION_NORTHEAST;
 	}
 
@@ -751,405 +499,318 @@ Direction getDirectionTo(const Position& from, const Position& to)
 	return dir;
 }
 
+using MagicEffectNames = std::unordered_map<std::string, MagicEffectClasses>;
+using ShootTypeNames = std::unordered_map<std::string, ShootType_t>;
+using CombatTypeNames = std::unordered_map<CombatType_t, std::string, std::hash<int32_t>>;
+using AmmoTypeNames = std::unordered_map<std::string, Ammo_t>;
+using WeaponActionNames = std::unordered_map<std::string, WeaponAction_t>;
+using SkullNames = std::unordered_map<std::string, Skulls_t>;
+using SpawnTypeNames = std::unordered_map<std::string, SpawnType_t>;
+
+MagicEffectNames magicEffectNames = {
+	{"assassin",			CONST_ME_ASSASSIN},
+	{"bluefireworks",		CONST_ME_BLUE_FIREWORKS },
+	{"bluebubble",			CONST_ME_LOSEENERGY},
+	{"blackspark",			CONST_ME_HITAREA},
+	{"blueshimmer",			CONST_ME_MAGIC_BLUE},
+	{"bluenote",			CONST_ME_SOUND_BLUE},
+	{"bubbles",				CONST_ME_BUBBLES},
+	{"bluefirework",		CONST_ME_FIREWORK_BLUE},
+	{"bigclouds",			CONST_ME_BIGCLOUDS},
+	{"bigplants",			CONST_ME_BIGPLANTS},
+	{"bloodysteps",			CONST_ME_BLOODYSTEPS},
+	{"bats",				CONST_ME_BATS},
+	{"blueenergyspark",		CONST_ME_BLUE_ENERGY_SPARK },
+	{"blueghost",			CONST_ME_BLUE_GHOST },
+	{"blacksmoke",			CONST_ME_BLACKSMOKE},
+	{"carniphila",			CONST_ME_CARNIPHILA},
+	{"cake",				CONST_ME_CAKE},
+	{"confettihorizontal",	CONST_ME_CONFETTI_HORIZONTAL},
+	{"confettivertical",	CONST_ME_CONFETTI_VERTICAL},
+	{"criticaldagame",		CONST_ME_CRITICAL_DAMAGE},
+	{"dice",				CONST_ME_CRAPS},
+	{"dragonhead",			CONST_ME_DRAGONHEAD},
+	{"explosionarea",		CONST_ME_EXPLOSIONAREA},
+	{"explosion",			CONST_ME_EXPLOSIONHIT},
+	{"energy",				CONST_ME_ENERGYHIT},
+	{"energyarea",			CONST_ME_ENERGYAREA},
+	{"earlythunder",		CONST_ME_EARLY_THUNDER },
+	{"fire",				CONST_ME_HITBYFIRE},
+	{"firearea",			CONST_ME_FIREAREA},
+	{"fireattack",			CONST_ME_FIREATTACK},
+	{"ferumbras",			CONST_ME_FERUMBRAS},
+	{"greenspark",			CONST_ME_HITBYPOISON},
+	{"greenbubble",			CONST_ME_GREEN_RINGS},
+	{"greennote",			CONST_ME_SOUND_GREEN},
+	{"greenshimmer",		CONST_ME_MAGIC_GREEN},
+	{"giftwraps",			CONST_ME_GIFT_WRAPS},
+	{"groundshaker",		CONST_ME_GROUNDSHAKER},
+	{"giantice",			CONST_ME_GIANTICE},
+	{"greensmoke",			CONST_ME_GREENSMOKE},
+	{"greenenergyspark",	CONST_ME_GREEN_ENERGY_SPARK },
+	{"greenfireworks",		CONST_ME_GREEN_FIREWORKS },
+	{"hearts",				CONST_ME_HEARTS},
+	{"holydamage",			CONST_ME_HOLYDAMAGE},
+	{"holyarea",			CONST_ME_HOLYAREA},
+	{"icearea",				CONST_ME_ICEAREA},
+	{"icetornado",			CONST_ME_ICETORNADO},
+	{"iceattack",			CONST_ME_ICEATTACK},
+	{"insects",				CONST_ME_INSECTS},
+	{"mortarea",			CONST_ME_MORTAREA},
+	{"mirrorhorizontal",	CONST_ME_MIRRORHORIZONTAL},
+	{"mirrorvertical",		CONST_ME_MIRRORVERTICAL},
+	{"magicpowder",			CONST_ME_MAGIC_POWDER },
+	{"orcshaman",			CONST_ME_ORCSHAMAN},
+	{"orcshamanfire",		CONST_ME_ORCSHAMAN_FIRE},
+	{"orangeenergyspark",	CONST_ME_ORANGE_ENERGY_SPARK },
+	{"orangefireworks",		CONST_ME_ORANGE_FIREWORKS },
+	{"poff",				CONST_ME_POFF},
+	{"poison",				CONST_ME_POISONAREA},
+	{"purplenote",			CONST_ME_SOUND_PURPLE},
+	{"purpleenergy",		CONST_ME_PURPLEENERGY},
+	{"plantattack",			CONST_ME_PLANTATTACK},
+	{"plugingfish",			CONST_ME_PLUNGING_FISH},
+	{"purplesmoke",			CONST_ME_PURPLESMOKE},
+	{"pixieexplosion",		CONST_ME_PIXIE_EXPLOSION },
+	{"pixiecoming",			CONST_ME_PIXIE_COMING },
+	{"pixiegoing",			CONST_ME_PIXIE_GOING },
+	{"pinkbeam",			CONST_ME_PINK_BEAM },
+	{"pinkvortex",			CONST_ME_PINK_VORTEX },
+	{"pinkenergyspark",		CONST_ME_PINK_ENERGY_SPARK },
+	{"pinkfireworks",		CONST_ME_PINK_FIREWORKS },
+	{"redspark",			CONST_ME_DRAWBLOOD},
+	{"redshimmer",			CONST_ME_MAGIC_RED},
+	{"rednote",				CONST_ME_SOUND_RED},
+	{"redfirework",			CONST_ME_FIREWORK_RED},
+	{"redsmoke",			CONST_ME_REDSMOKE},
+	{"ragiazbonecapsule",	CONST_ME_RAGIAZ_BONECAPSULE},
+	{"stun",				CONST_ME_STUN},
+	{"sleep",				CONST_ME_SLEEP},
+	{"smallclouds",			CONST_ME_SMALLCLOUDS},
+	{"stones",				CONST_ME_STONES},
+	{"smallplants",			CONST_ME_SMALLPLANTS},
+	{"skullhorizontal",		CONST_ME_SKULLHORIZONTAL},
+	{"skullvertical",		CONST_ME_SKULLVERTICAL},
+	{"stepshorizontal",		CONST_ME_STEPSHORIZONTAL},
+	{"stepsvertical",		CONST_ME_STEPSVERTICAL},
+	{"smoke",				CONST_ME_SMOKE},
+	{"storm",				CONST_ME_STORM },
+	{"stonestorm",			CONST_ME_STONE_STORM },
+	{"teleport",			CONST_ME_TELEPORT},
+	{"tutorialarrow",		CONST_ME_TUTORIALARROW},
+	{"tutorialsquare",		CONST_ME_TUTORIALSQUARE},
+	{"thunder",				CONST_ME_THUNDER},
+	{"treasuremap",			CONST_ME_TREASURE_MAP },
+	{"yellowspark",			CONST_ME_BLOCKHIT},
+	{"yellowbubble",		CONST_ME_YELLOW_RINGS},
+	{"yellownote",			CONST_ME_SOUND_YELLOW},
+	{"yellowfirework",		CONST_ME_FIREWORK_YELLOW},
+	{"yellowenergy",		CONST_ME_YELLOWENERGY},
+	{"yalaharighost",		CONST_ME_YALAHARIGHOST},
+	{"yellowsmoke",			CONST_ME_YELLOWSMOKE},
+	{"yellowenergyspark",	CONST_ME_YELLOW_ENERGY_SPARK },
+	{"whitenote",			CONST_ME_SOUND_WHITE},
+	{"watercreature",		CONST_ME_WATERCREATURE},
+	{"watersplash",			CONST_ME_WATERSPLASH},
+	{"whiteenergyspark",	CONST_ME_WHITE_ENERGY_SPARK },
+};
+
+ShootTypeNames shootTypeNames = {
+	{"arrow",				CONST_ANI_ARROW},
+	{"bolt",				CONST_ANI_BOLT},
+	{"burstarrow",			CONST_ANI_BURSTARROW},
+	{"cake",				CONST_ANI_CAKE},
+	{"crystallinearrow",	CONST_ANI_CRYSTALLINEARROW},
+	{"drillbolt",			CONST_ANI_DRILLBOLT},
+	{"death",				CONST_ANI_DEATH},
+	{"energy",				CONST_ANI_ENERGY},
+	{"enchantedspear",		CONST_ANI_ENCHANTEDSPEAR},
+	{"etherealspear",		CONST_ANI_ETHEREALSPEAR},
+	{"eartharrow",			CONST_ANI_EARTHARROW},
+	{"explosion",			CONST_ANI_EXPLOSION},
+	{"earth",				CONST_ANI_EARTH},
+	{"energyball",			CONST_ANI_ENERGYBALL},
+	{"envenomedarrow",		CONST_ANI_ENVENOMEDARROW},
+	{"fire",				CONST_ANI_FIRE},
+	{"flasharrow",			CONST_ANI_FLASHARROW},
+	{"flammingarrow",		CONST_ANI_FLAMMINGARROW},
+	{"greenstar",			CONST_ANI_GREENSTAR},
+	{"gloothspear",			CONST_ANI_GLOOTHSPEAR},
+	{"huntingspear",		CONST_ANI_HUNTINGSPEAR},
+	{"holy",				CONST_ANI_HOLY},
+	{"infernalbolt",		CONST_ANI_INFERNALBOLT},
+	{"ice",					CONST_ANI_ICE},
+	{"largerock",			CONST_ANI_LARGEROCK},
+	{"leafstar",			CONST_ANI_LEAFSTAR},
+	{"onyxarrow",			CONST_ANI_ONYXARROW},
+	{"redstar",				CONST_ANI_REDSTAR},
+	{"royalspear",			CONST_ANI_ROYALSPEAR},
+	{"spear",				CONST_ANI_SPEAR},
+	{"sniperarrow",			CONST_ANI_SNIPERARROW},
+	{"smallstone",			CONST_ANI_SMALLSTONE},
+	{"smallice",			CONST_ANI_SMALLICE},
+	{"smallholy",			CONST_ANI_SMALLHOLY},
+	{"smallearth",			CONST_ANI_SMALLEARTH},
+	{"snowball",			CONST_ANI_SNOWBALL},
+	{"suddendeath",			CONST_ANI_SUDDENDEATH},
+	{"shiverarrow",			CONST_ANI_SHIVERARROW},
+	{"simplearrow",			CONST_ANI_SIMPLEARROW},
+	{"poisonarrow",			CONST_ANI_POISONARROW},
+	{"powerbolt",			CONST_ANI_POWERBOLT},
+	{"poison",				CONST_ANI_POISON},
+	{"prismaticbolt",		CONST_ANI_PRISMATICBOLT},
+	{"piercingbolt",		CONST_ANI_PIERCINGBOLT},
+	{"throwingstar",		CONST_ANI_THROWINGSTAR},
+	{"vortexbolt",			CONST_ANI_VORTEXBOLT},
+	{"throwingknife",		CONST_ANI_THROWINGKNIFE},
+	{"tarsalarrow",			CONST_ANI_TARSALARROW},
+	{"whirlwindsword",		CONST_ANI_WHIRLWINDSWORD},
+	{"whirlwindaxe",		CONST_ANI_WHIRLWINDAXE},
+	{"whirlwindclub",		CONST_ANI_WHIRLWINDCLUB},
+	{"diamondarrow",		CONST_ANI_DIAMONDARROW},
+	{"spectralbolt",		CONST_ANI_SPECTRALBOLT},
+	{"royalstar",			CONST_ANI_ROYALSTAR},
+};
+
+CombatTypeNames combatTypeNames = {
+	
+	{COMBAT_DROWNDAMAGE, 		"drown"},
+	{COMBAT_DEATHDAMAGE, 		"death"},
+	{COMBAT_ENERGYDAMAGE, 		"energy"},
+	{COMBAT_EARTHDAMAGE, 		"earth"},
+	{COMBAT_FIREDAMAGE, 		"fire"},
+	{COMBAT_HEALING, 			"healing"},
+	{COMBAT_HOLYDAMAGE, 		"holy"},
+	{COMBAT_ICEDAMAGE, 			"ice"},
+	{COMBAT_UNDEFINEDDAMAGE, 	"undefined"},
+	{COMBAT_LIFEDRAIN, 			"lifedrain"},
+	{COMBAT_MANADRAIN, 			"manadrain"},
+	{COMBAT_PHYSICALDAMAGE, 	"physical"},
+};
+
+AmmoTypeNames ammoTypeNames = {
+	{"arrow",				AMMO_ARROW},
+	{"bolt",				AMMO_BOLT},
+	{"poisonarrow",			AMMO_ARROW},
+	{"burstarrow",			AMMO_ARROW},
+	{"enchantedspear",		AMMO_SPEAR},
+	{"etherealspear",		AMMO_SPEAR},
+	{"eartharrow",			AMMO_ARROW},
+	{"flasharrow",			AMMO_ARROW},
+	{"flammingarrow",		AMMO_ARROW},
+	{"huntingspear",		AMMO_SPEAR},
+	{"infernalbolt",		AMMO_BOLT},
+	{"largerock",			AMMO_STONE},
+	{"onyxarrow",			AMMO_ARROW},
+	{"powerbolt",			AMMO_BOLT},
+	{"piercingbolt",		AMMO_BOLT},
+	{"royalspear",			AMMO_SPEAR},
+	{"snowball",			AMMO_SNOWBALL},
+	{"smallstone",			AMMO_STONE},
+	{"spear",				AMMO_SPEAR},
+	{"sniperarrow",			AMMO_ARROW},
+	{"shiverarrow",			AMMO_ARROW},
+	{"throwingstar",		AMMO_THROWINGSTAR},
+	{"throwingknife",		AMMO_THROWINGKNIFE},
+	{"diamondarrow",		AMMO_ARROW},
+	{"spectralbolt",		AMMO_BOLT},
+
+};
+
+WeaponActionNames weaponActionNames = {
+	{"move",				WEAPONACTION_MOVE},
+	{"removecharge",		WEAPONACTION_REMOVECHARGE},
+	{"removecount",			WEAPONACTION_REMOVECOUNT},
+};
+
+SkullNames skullNames = {
+	{"black",				SKULL_BLACK},
+	{"green",				SKULL_GREEN},
+	{"none",				SKULL_NONE},
+	{"orange",				SKULL_ORANGE},
+	{"red",					SKULL_RED},
+	{"yellow",				SKULL_YELLOW},
+	{"white",				SKULL_WHITE},
+};
+
+SpawnTypeNames spawnTypeNames = {
+	{"all",					RESPAWN_IN_ALL },
+	{"day",					RESPAWN_IN_DAY },
+	{"dayandcave",			RESPAWN_IN_DAY_CAVE },
+	{"night",				RESPAWN_IN_NIGHT },
+	{"nightandcave",		RESPAWN_IN_NIGHT_CAVE },
+};
+
 MagicEffectClasses getMagicEffect(const std::string& strValue)
 {
-	if (!tfs_strcmp(strValue.c_str(), "redspark")) {
-		return CONST_ME_DRAWBLOOD;
-	} else if (!tfs_strcmp(strValue.c_str(), "bluebubble")) {
-		return CONST_ME_LOSEENERGY;
-	} else if (!tfs_strcmp(strValue.c_str(), "poff")) {
-		return CONST_ME_POFF;
-	} else if (!tfs_strcmp(strValue.c_str(), "yellowspark")) {
-		return CONST_ME_BLOCKHIT;
-	} else if (!tfs_strcmp(strValue.c_str(), "explosionarea")) {
-		return CONST_ME_EXPLOSIONAREA;
-	} else if (!tfs_strcmp(strValue.c_str(), "explosion")) {
-		return CONST_ME_EXPLOSIONHIT;
-	} else if (!tfs_strcmp(strValue.c_str(), "firearea")) {
-		return CONST_ME_FIREAREA;
-	} else if (!tfs_strcmp(strValue.c_str(), "yellowbubble")) {
-		return CONST_ME_YELLOW_RINGS;
-	} else if (!tfs_strcmp(strValue.c_str(), "greenbubble")) {
-		return CONST_ME_GREEN_RINGS;
-	} else if (!tfs_strcmp(strValue.c_str(), "blackspark")) {
-		return CONST_ME_HITAREA;
-	} else if (!tfs_strcmp(strValue.c_str(), "teleport")) {
-		return CONST_ME_TELEPORT;
-	} else if (!tfs_strcmp(strValue.c_str(), "energy")) {
-		return CONST_ME_ENERGYHIT;
-	} else if (!tfs_strcmp(strValue.c_str(), "blueshimmer")) {
-		return CONST_ME_MAGIC_BLUE;
-	} else if (!tfs_strcmp(strValue.c_str(), "redshimmer")) {
-		return CONST_ME_MAGIC_RED;
-	} else if (!tfs_strcmp(strValue.c_str(), "greenshimmer")) {
-		return CONST_ME_MAGIC_GREEN;
-	} else if (!tfs_strcmp(strValue.c_str(), "fire")) {
-		return CONST_ME_HITBYFIRE;
-	} else if (!tfs_strcmp(strValue.c_str(), "greenspark")) {
-		return CONST_ME_HITBYPOISON;
-	} else if (!tfs_strcmp(strValue.c_str(), "mortarea")) {
-		return CONST_ME_MORTAREA;
-	} else if (!tfs_strcmp(strValue.c_str(), "greennote")) {
-		return CONST_ME_SOUND_GREEN;
-	} else if (!tfs_strcmp(strValue.c_str(), "rednote")) {
-		return CONST_ME_SOUND_RED;
-	} else if (!tfs_strcmp(strValue.c_str(), "poison")) {
-		return CONST_ME_POISONAREA;
-	} else if (!tfs_strcmp(strValue.c_str(), "yellownote")) {
-		return CONST_ME_SOUND_YELLOW;
-	} else if (!tfs_strcmp(strValue.c_str(), "purplenote")) {
-		return CONST_ME_SOUND_PURPLE;
-	} else if (!tfs_strcmp(strValue.c_str(), "bluenote")) {
-		return CONST_ME_SOUND_BLUE;
-	} else if (!tfs_strcmp(strValue.c_str(), "whitenote")) {
-		return CONST_ME_SOUND_WHITE;
-	} else if (!tfs_strcmp(strValue.c_str(), "bubbles")) {
-		return CONST_ME_BUBBLES;
-	} else if (!tfs_strcmp(strValue.c_str(), "dice")) {
-		return CONST_ME_CRAPS;
-	} else if (!tfs_strcmp(strValue.c_str(), "giftwraps")) {
-		return CONST_ME_GIFT_WRAPS;
-	} else if (!tfs_strcmp(strValue.c_str(), "yellowfirework")) {
-		return CONST_ME_FIREWORK_YELLOW;
-	} else if (!tfs_strcmp(strValue.c_str(), "redfirework")) {
-		return CONST_ME_FIREWORK_RED;
-	} else if (!tfs_strcmp(strValue.c_str(), "bluefirework")) {
-		return CONST_ME_FIREWORK_BLUE;
-	} else if (!tfs_strcmp(strValue.c_str(), "stun")) {
-		return CONST_ME_STUN;
-	} else if (!tfs_strcmp(strValue.c_str(), "sleep")) {
-		return CONST_ME_SLEEP;
-	} else if (!tfs_strcmp(strValue.c_str(), "watercreature")) {
-		return CONST_ME_WATERCREATURE;
-	} else if (!tfs_strcmp(strValue.c_str(), "groundshaker")) {
-		return CONST_ME_GROUNDSHAKER;
-	} else if (!tfs_strcmp(strValue.c_str(), "hearts")) {
-		return CONST_ME_HEARTS;
-	} else if (!tfs_strcmp(strValue.c_str(), "fireattack")) {
-		return CONST_ME_FIREATTACK;
-	} else if (!tfs_strcmp(strValue.c_str(), "energyarea")) {
-		return CONST_ME_ENERGYAREA;
-	} else if (!tfs_strcmp(strValue.c_str(), "smallclouds")) {
-		return CONST_ME_SMALLCLOUDS;
-	} else if (!tfs_strcmp(strValue.c_str(), "holydamage")) {
-		return CONST_ME_HOLYDAMAGE;
-	} else if (!tfs_strcmp(strValue.c_str(), "bigclouds")) {
-		return CONST_ME_BIGCLOUDS;
-	} else if (!tfs_strcmp(strValue.c_str(), "icearea")) {
-		return CONST_ME_ICEAREA;
-	} else if (!tfs_strcmp(strValue.c_str(), "icetornado")) {
-		return CONST_ME_ICETORNADO;
-	} else if (!tfs_strcmp(strValue.c_str(), "iceattack")) {
-		return CONST_ME_ICEATTACK;
-	} else if (!tfs_strcmp(strValue.c_str(), "stones")) {
-		return CONST_ME_STONES;
-	} else if (!tfs_strcmp(strValue.c_str(), "smallplants")) {
-		return CONST_ME_SMALLPLANTS;
-	} else if (!tfs_strcmp(strValue.c_str(), "carniphila")) {
-		return CONST_ME_CARNIPHILA;
-	} else if (!tfs_strcmp(strValue.c_str(), "purpleenergy")) {
-		return CONST_ME_PURPLEENERGY;
-	} else if (!tfs_strcmp(strValue.c_str(), "yellowenergy")) {
-		return CONST_ME_YELLOWENERGY;
-	} else if (!tfs_strcmp(strValue.c_str(), "holyarea")) {
-		return CONST_ME_HOLYAREA;
-	} else if (!tfs_strcmp(strValue.c_str(), "bigplants")) {
-		return CONST_ME_BIGPLANTS;
-	} else if (!tfs_strcmp(strValue.c_str(), "cake")) {
-		return CONST_ME_CAKE;
-	} else if (!tfs_strcmp(strValue.c_str(), "giantice")) {
-		return CONST_ME_GIANTICE;
-	} else if (!tfs_strcmp(strValue.c_str(), "watersplash")) {
-		return CONST_ME_WATERSPLASH;
-	} else if (!tfs_strcmp(strValue.c_str(), "plantattack")) {
-		return CONST_ME_PLANTATTACK;
-	} else if (!tfs_strcmp(strValue.c_str(), "tutorialarrow")) {
-		return CONST_ME_TUTORIALARROW;
-	} else if (!tfs_strcmp(strValue.c_str(), "tutorialsquare")) {
-		return CONST_ME_TUTORIALSQUARE;
-	} else if (!tfs_strcmp(strValue.c_str(), "mirrorhorizontal")) {
-		return CONST_ME_MIRRORHORIZONTAL;
-	} else if (!tfs_strcmp(strValue.c_str(), "mirrorvertical")) {
-		return CONST_ME_MIRRORVERTICAL;
-	} else if (!tfs_strcmp(strValue.c_str(), "skullhorizontal")) {
-		return CONST_ME_SKULLHORIZONTAL;
-	} else if (!tfs_strcmp(strValue.c_str(), "skullvertical")) {
-		return CONST_ME_SKULLVERTICAL;
-	} else if (!tfs_strcmp(strValue.c_str(), "assassin")) {
-		return CONST_ME_ASSASSIN;
-	} else if (!tfs_strcmp(strValue.c_str(), "stepshorizontal")) {
-		return CONST_ME_STEPSHORIZONTAL;
-	} else if (!tfs_strcmp(strValue.c_str(), "bloodysteps")) {
-		return CONST_ME_BLOODYSTEPS;
-	} else if (!tfs_strcmp(strValue.c_str(), "stepsvertical")) {
-		return CONST_ME_STEPSVERTICAL;
-	} else if (!tfs_strcmp(strValue.c_str(), "yalaharighost")) {
-		return CONST_ME_YALAHARIGHOST;
-	} else if (!tfs_strcmp(strValue.c_str(), "bats")) {
-		return CONST_ME_BATS;
-	} else if (!tfs_strcmp(strValue.c_str(), "smoke")) {
-		return CONST_ME_SMOKE;
-	} else if (!tfs_strcmp(strValue.c_str(), "insects")) {
-		return CONST_ME_INSECTS;
-	} else if (!tfs_strcmp(strValue.c_str(), "dragonhead")) {
-		return CONST_ME_DRAGONHEAD;
-	} else if (!tfs_strcmp(strValue.c_str(), "orcshaman")) {
-		return CONST_ME_ORCSHAMAN;
-	} else if (!tfs_strcmp(strValue.c_str(), "orcshamanfire")) {
-		return CONST_ME_ORCSHAMAN_FIRE;
-	} else if (!tfs_strcmp(strValue.c_str(), "thunder")) {
-		return CONST_ME_THUNDER;
-	} else if (!tfs_strcmp(strValue.c_str(), "ferumbras")) {
-		return CONST_ME_FERUMBRAS;
-	} else if (!tfs_strcmp(strValue.c_str(), "confettihorizontal")) {
-		return CONST_ME_CONFETTI_HORIZONTAL;
-	} else if (!tfs_strcmp(strValue.c_str(), "confettivertical")) {
-		return CONST_ME_CONFETTI_VERTICAL;
-	} else if (!tfs_strcmp(strValue.c_str(), "blacksmoke")) {
-		return CONST_ME_BLACKSMOKE;
-	} else if (!tfs_strcmp(strValue.c_str(), "redsmoke")) {
-		return CONST_ME_REDSMOKE;
-	} else if (!tfs_strcmp(strValue.c_str(), "yellowsmoke")) {
-		return CONST_ME_YELLOWSMOKE;
-	} else if (!tfs_strcmp(strValue.c_str(), "greensmoke")) {
-		return CONST_ME_GREENSMOKE;
-	} else if (!tfs_strcmp(strValue.c_str(), "purplesmoke")) {
-		return CONST_ME_PURPLESMOKE;
+	auto magicEffect = magicEffectNames.find(strValue);
+	if (magicEffect != magicEffectNames.end()) {
+		return magicEffect->second;
 	}
 	return CONST_ME_NONE;
 }
 
 ShootType_t getShootType(const std::string& strValue)
 {
-	if (!tfs_strcmp(strValue.c_str(), "spear")) {
-		return CONST_ANI_SPEAR;
-	} else if (!tfs_strcmp(strValue.c_str(), "bolt")) {
-		return CONST_ANI_BOLT;
-	} else if (!tfs_strcmp(strValue.c_str(), "arrow")) {
-		return CONST_ANI_ARROW;
-	} else if (!tfs_strcmp(strValue.c_str(), "fire")) {
-		return CONST_ANI_FIRE;
-	} else if (!tfs_strcmp(strValue.c_str(), "energy")) {
-		return CONST_ANI_ENERGY;
-	} else if (!tfs_strcmp(strValue.c_str(), "poisonarrow")) {
-		return CONST_ANI_POISONARROW;
-	} else if (!tfs_strcmp(strValue.c_str(), "burstarrow")) {
-		return CONST_ANI_BURSTARROW;
-	} else if (!tfs_strcmp(strValue.c_str(), "throwingstar")) {
-		return CONST_ANI_THROWINGSTAR;
-	} else if (!tfs_strcmp(strValue.c_str(), "throwingknife")) {
-		return CONST_ANI_THROWINGKNIFE;
-	} else if (!tfs_strcmp(strValue.c_str(), "smallstone")) {
-		return CONST_ANI_SMALLSTONE;
-	} else if (!tfs_strcmp(strValue.c_str(), "death")) {
-		return CONST_ANI_DEATH;
-	} else if (!tfs_strcmp(strValue.c_str(), "largerock")) {
-		return CONST_ANI_LARGEROCK;
-	} else if (!tfs_strcmp(strValue.c_str(), "snowball")) {
-		return CONST_ANI_SNOWBALL;
-	} else if (!tfs_strcmp(strValue.c_str(), "powerbolt")) {
-		return CONST_ANI_POWERBOLT;
-	} else if (!tfs_strcmp(strValue.c_str(), "poison")) {
-		return CONST_ANI_POISON;
-	} else if (!tfs_strcmp(strValue.c_str(), "infernalbolt")) {
-		return CONST_ANI_INFERNALBOLT;
-	} else if (!tfs_strcmp(strValue.c_str(), "huntingspear")) {
-		return CONST_ANI_HUNTINGSPEAR;
-	} else if (!tfs_strcmp(strValue.c_str(), "enchantedspear")) {
-		return CONST_ANI_ENCHANTEDSPEAR;
-	} else if (!tfs_strcmp(strValue.c_str(), "redstar")) {
-		return CONST_ANI_REDSTAR;
-	} else if (!tfs_strcmp(strValue.c_str(), "greenstar")) {
-		return CONST_ANI_GREENSTAR;
-	} else if (!tfs_strcmp(strValue.c_str(), "royalspear")) {
-		return CONST_ANI_ROYALSPEAR;
-	} else if (!tfs_strcmp(strValue.c_str(), "sniperarrow")) {
-		return CONST_ANI_SNIPERARROW;
-	} else if (!tfs_strcmp(strValue.c_str(), "onyxarrow")) {
-		return CONST_ANI_ONYXARROW;
-	} else if (!tfs_strcmp(strValue.c_str(), "piercingbolt")) {
-		return CONST_ANI_PIERCINGBOLT;
-	} else if (!tfs_strcmp(strValue.c_str(), "whirlwindsword")) {
-		return CONST_ANI_WHIRLWINDSWORD;
-	} else if (!tfs_strcmp(strValue.c_str(), "whirlwindaxe")) {
-		return CONST_ANI_WHIRLWINDAXE;
-	} else if (!tfs_strcmp(strValue.c_str(), "whirlwindclub")) {
-		return CONST_ANI_WHIRLWINDCLUB;
-	} else if (!tfs_strcmp(strValue.c_str(), "etherealspear")) {
-		return CONST_ANI_ETHEREALSPEAR;
-	} else if (!tfs_strcmp(strValue.c_str(), "ice")) {
-		return CONST_ANI_ICE;
-	} else if (!tfs_strcmp(strValue.c_str(), "earth")) {
-		return CONST_ANI_EARTH;
-	} else if (!tfs_strcmp(strValue.c_str(), "holy")) {
-		return CONST_ANI_HOLY;
-	} else if (!tfs_strcmp(strValue.c_str(), "suddendeath")) {
-		return CONST_ANI_SUDDENDEATH;
-	} else if (!tfs_strcmp(strValue.c_str(), "flasharrow")) {
-		return CONST_ANI_FLASHARROW;
-	} else if (!tfs_strcmp(strValue.c_str(), "flammingarrow")) {
-		return CONST_ANI_FLAMMINGARROW;
-	} else if (!tfs_strcmp(strValue.c_str(), "shiverarrow")) {
-		return CONST_ANI_SHIVERARROW;
-	} else if (!tfs_strcmp(strValue.c_str(), "energyball")) {
-		return CONST_ANI_ENERGYBALL;
-	} else if (!tfs_strcmp(strValue.c_str(), "smallice")) {
-		return CONST_ANI_SMALLICE;
-	} else if (!tfs_strcmp(strValue.c_str(), "smallholy")) {
-		return CONST_ANI_SMALLHOLY;
-	} else if (!tfs_strcmp(strValue.c_str(), "smallearth")) {
-		return CONST_ANI_SMALLEARTH;
-	} else if (!tfs_strcmp(strValue.c_str(), "eartharrow")) {
-		return CONST_ANI_EARTHARROW;
-	} else if (!tfs_strcmp(strValue.c_str(), "explosion")) {
-		return CONST_ANI_EXPLOSION;
-	} else if (!tfs_strcmp(strValue.c_str(), "cake")) {
-		return CONST_ANI_CAKE;
-	} else if (!tfs_strcmp(strValue.c_str(), "tarsalarrow")) {
-		return CONST_ANI_TARSALARROW;
-	} else if (!tfs_strcmp(strValue.c_str(), "vortexbolt")) {
-		return CONST_ANI_VORTEXBOLT;
-	} else if (!tfs_strcmp(strValue.c_str(), "prismaticbolt")) {
-		return CONST_ANI_PRISMATICBOLT;
-	} else if (!tfs_strcmp(strValue.c_str(), "crystallinearrow")) {
-		return CONST_ANI_CRYSTALLINEARROW;
-	} else if (!tfs_strcmp(strValue.c_str(), "drillbolt")) {
-		return CONST_ANI_DRILLBOLT;
-	} else if (!tfs_strcmp(strValue.c_str(), "envenomedarrow")) {
-		return CONST_ANI_ENVENOMEDARROW;
-	} else if (!tfs_strcmp(strValue.c_str(), "gloothspear")) {
-		return CONST_ANI_GLOOTHSPEAR;
-	} else if (!tfs_strcmp(strValue.c_str(), "simplearrow")) {
-		return CONST_ANI_SIMPLEARROW;
+	auto shootType = shootTypeNames.find(strValue);
+	if (shootType != shootTypeNames.end()) {
+		return shootType->second;
 	}
 	return CONST_ANI_NONE;
 }
 
 std::string getCombatName(CombatType_t combatType)
 {
-	switch (combatType) {
-		case COMBAT_PHYSICALDAMAGE: return "physical";
-		case COMBAT_ENERGYDAMAGE: return "energy";
-		case COMBAT_EARTHDAMAGE: return "earth";
-		case COMBAT_FIREDAMAGE: return "fire";
-		case COMBAT_UNDEFINEDDAMAGE: return "undefined";
-		case COMBAT_LIFEDRAIN: return "lifedrain";
-		case COMBAT_MANADRAIN: return "manadrain";
-		case COMBAT_HEALING: return "healing";
-		case COMBAT_DROWNDAMAGE: return "drown";
-		case COMBAT_ICEDAMAGE: return "ice";
-		case COMBAT_HOLYDAMAGE: return "holy";
-		case COMBAT_DEATHDAMAGE: return "death";
-		default: return "unknown";
+	auto combatName = combatTypeNames.find(combatType);
+	if (combatName != combatTypeNames.end()) {
+		return combatName->second;
 	}
+	return "unknown";
+}
+
+CombatType_t getCombatType(const std::string& combatname)
+{
+	auto it = std::find_if(combatTypeNames.begin(), combatTypeNames.end(), [combatname](std::pair<CombatType_t, std::string> const& pair) {
+		return pair.second == combatname;
+	});
+
+	return it != combatTypeNames.end() ? it->first : COMBAT_NONE;
 }
 
 Ammo_t getAmmoType(const std::string& strValue)
 {
-	if (!tfs_strcmp(strValue.c_str(), "spear")) {
-		return AMMO_SPEAR;
-	} else if (!tfs_strcmp(strValue.c_str(), "bolt")) {
-		return AMMO_BOLT;
-	} else if (!tfs_strcmp(strValue.c_str(), "arrow")) {
-		return AMMO_ARROW;
-	} else if (!tfs_strcmp(strValue.c_str(), "poisonarrow")) {
-		return AMMO_ARROW;
-	} else if (!tfs_strcmp(strValue.c_str(), "burstarrow")) {
-		return AMMO_ARROW;
-	} else if (!tfs_strcmp(strValue.c_str(), "throwingstar")) {
-		return AMMO_THROWINGSTAR;
-	} else if (!tfs_strcmp(strValue.c_str(), "throwingknife")) {
-		return AMMO_THROWINGKNIFE;
-	} else if (!tfs_strcmp(strValue.c_str(), "smallstone")) {
-		return AMMO_STONE;
-	} else if (!tfs_strcmp(strValue.c_str(), "largerock")) {
-		return AMMO_STONE;
-	} else if (!tfs_strcmp(strValue.c_str(), "snowball")) {
-		return AMMO_SNOWBALL;
-	} else if (!tfs_strcmp(strValue.c_str(), "powerbolt")) {
-		return AMMO_BOLT;
-	} else if (!tfs_strcmp(strValue.c_str(), "infernalbolt")) {
-		return AMMO_BOLT;
-	} else if (!tfs_strcmp(strValue.c_str(), "huntingspear")) {
-		return AMMO_SPEAR;
-	} else if (!tfs_strcmp(strValue.c_str(), "enchantedspear")) {
-		return AMMO_SPEAR;
-	} else if (!tfs_strcmp(strValue.c_str(), "royalspear")) {
-		return AMMO_SPEAR;
-	} else if (!tfs_strcmp(strValue.c_str(), "sniperarrow")) {
-		return AMMO_ARROW;
-	} else if (!tfs_strcmp(strValue.c_str(), "onyxarrow")) {
-		return AMMO_ARROW;
-	} else if (!tfs_strcmp(strValue.c_str(), "piercingbolt")) {
-		return AMMO_BOLT;
-	} else if (!tfs_strcmp(strValue.c_str(), "etherealspear")) {
-		return AMMO_SPEAR;
-	} else if (!tfs_strcmp(strValue.c_str(), "flasharrow")) {
-		return AMMO_ARROW;
-	} else if (!tfs_strcmp(strValue.c_str(), "flammingarrow")) {
-		return AMMO_ARROW;
-	} else if (!tfs_strcmp(strValue.c_str(), "shiverarrow")) {
-		return AMMO_ARROW;
-	} else if (!tfs_strcmp(strValue.c_str(), "eartharrow")) {
-		return AMMO_ARROW;
+	auto ammoType = ammoTypeNames.find(strValue);
+	if (ammoType != ammoTypeNames.end()) {
+		return ammoType->second;
 	}
 	return AMMO_NONE;
 }
 
 WeaponAction_t getWeaponAction(const std::string& strValue)
 {
-	if (!tfs_strcmp(strValue.c_str(), "move")) {
-		return WEAPONACTION_MOVE;
-	} else if (!tfs_strcmp(strValue.c_str(), "removecharge")) {
-		return WEAPONACTION_REMOVECHARGE;
-	} else if (!tfs_strcmp(strValue.c_str(), "removecount")) {
-		return WEAPONACTION_REMOVECOUNT;
+	auto weaponAction = weaponActionNames.find(strValue);
+	if (weaponAction != weaponActionNames.end()) {
+		return weaponAction->second;
 	}
 	return WEAPONACTION_NONE;
 }
 
 Skulls_t getSkullType(const std::string& strValue)
 {
-	if (!tfs_strcmp(strValue.c_str(), "yellow")) {
-		return SKULL_YELLOW;
-	} else if (!tfs_strcmp(strValue.c_str(), "green")) {
-		return SKULL_GREEN;
-	} else if (!tfs_strcmp(strValue.c_str(), "white")) {
-		return SKULL_WHITE;
-	} else if (!tfs_strcmp(strValue.c_str(), "red")) {
-		return SKULL_RED;
-	} else if (!tfs_strcmp(strValue.c_str(), "black")) {
-		return SKULL_BLACK;
-	} else if (!tfs_strcmp(strValue.c_str(), "orange")) {
-		return SKULL_ORANGE;
+	auto skullType = skullNames.find(strValue);
+	if (skullType != skullNames.end()) {
+		return skullType->second;
 	}
 	return SKULL_NONE;
 }
 
-std::string getSpecialSkillName(uint8_t skillid)
+SpawnType_t getSpawnType(const std::string& strValue)
 {
-	switch (skillid) {
-		case SPECIALSKILL_CRITICALHITCHANCE:
-			return "critical hit chance";
-
-		case SPECIALSKILL_CRITICALHITAMOUNT:
-			return "critical extra damage";
-
-		case SPECIALSKILL_LIFELEECHCHANCE:
-			return "hitpoints leech chance";
-
-		case SPECIALSKILL_LIFELEECHAMOUNT:
-			return "hitpoints leech amount";
-
-		case SPECIALSKILL_MANALEECHCHANCE:
-			return "manapoints leech chance";
-
-		case SPECIALSKILL_MANALEECHAMOUNT:
-			return "mana points leech amount";
-
-		default:
-			return "unknown";
+	auto spawnType = spawnTypeNames.find(strValue);
+	if (spawnType != spawnTypeNames.end()) {
+		return spawnType->second;
 	}
+	return RESPAWN_IN_ALL;
 }
 
 std::string getSkillName(uint8_t skillid)
@@ -1176,6 +837,24 @@ std::string getSkillName(uint8_t skillid)
 		case SKILL_FISHING:
 			return "fishing";
 
+		case SKILL_CRITICAL_HIT_CHANCE:
+			return "critical hit chance";
+
+		case SKILL_CRITICAL_HIT_DAMAGE:
+			return "critical hit damage";
+
+		case SKILL_LIFE_LEECH_CHANCE:
+			return "life leech chance";
+
+		case SKILL_LIFE_LEECH_AMOUNT:
+			return "life leech amount";
+
+		case SKILL_MANA_LEECH_CHANCE:
+			return "mana leech chance";
+
+		case SKILL_MANA_LEECH_AMOUNT:
+			return "mana leech amount";
+
 		case SKILL_MAGLEVEL:
 			return "magic level";
 
@@ -1194,11 +873,6 @@ uint32_t adlerChecksum(const uint8_t* data, size_t length)
 	}
 
 	const uint16_t adler = 65521;
-	#if defined(__SSE2__)
-	const __m128i h16 = _mm_setr_epi16(16, 15, 14, 13, 12, 11, 10, 9);
-	const __m128i h8 = _mm_setr_epi16(8, 7, 6, 5, 4, 3, 2, 1);
-	const __m128i zeros = _mm_setzero_si128();
-	#endif
 
 	uint32_t a = 1, b = 0;
 
@@ -1206,30 +880,10 @@ uint32_t adlerChecksum(const uint8_t* data, size_t length)
 		size_t tmp = length > 5552 ? 5552 : length;
 		length -= tmp;
 
-		#if defined(__SSE2__)
-		while (tmp >= 16) {
-			__m128i vdata = _mm_loadu_si128(reinterpret_cast<const __m128i*>(data));
-			__m128i v = _mm_sad_epu8(vdata, zeros);
-			__m128i v32 = _mm_add_epi32(_mm_madd_epi16(_mm_unpacklo_epi8(vdata, zeros), h16), _mm_madd_epi16(_mm_unpackhi_epi8(vdata, zeros), h8));
-			v32 = _mm_add_epi32(v32, _mm_shuffle_epi32(v32, _MM_SHUFFLE(2, 3, 0, 1)));
-			v32 = _mm_add_epi32(v32, _mm_shuffle_epi32(v32, _MM_SHUFFLE(0, 1, 2, 3)));
-			v = _mm_add_epi32(v, _mm_shuffle_epi32(v, _MM_SHUFFLE(1, 0, 3, 2)));
-			b += (a << 4) + _mm_cvtsi128_si32(v32);
-			a += _mm_cvtsi128_si32(v);
-
-			data += 16;
-			tmp -= 16;
-		}
-
-		while (tmp--) {
-			a += *data++; b += a;
-		}
-		#else
 		do {
 			a += *data++;
 			b += a;
 		} while (--tmp);
-		#endif
 
 		a %= adler;
 		b %= adler;
@@ -1348,52 +1002,51 @@ uint8_t clientFluidToServer(uint8_t clientFluid)
 
 itemAttrTypes stringToItemAttribute(const std::string& str)
 {
-	const char* cstr = str.c_str();
-	if (!tfs_strcmp(cstr, "aid")) {
+	if (str == "aid") {
 		return ITEM_ATTRIBUTE_ACTIONID;
-	} else if (!tfs_strcmp(cstr, "uid")) {
+	} else if (str == "uid") {
 		return ITEM_ATTRIBUTE_UNIQUEID;
-	} else if (!tfs_strcmp(cstr, "description")) {
+	} else if (str == "description") {
 		return ITEM_ATTRIBUTE_DESCRIPTION;
-	} else if (!tfs_strcmp(cstr, "text")) {
+	} else if (str == "text") {
 		return ITEM_ATTRIBUTE_TEXT;
-	} else if (!tfs_strcmp(cstr, "date")) {
+	} else if (str == "date") {
 		return ITEM_ATTRIBUTE_DATE;
-	} else if (!tfs_strcmp(cstr, "writer")) {
+	} else if (str == "writer") {
 		return ITEM_ATTRIBUTE_WRITER;
-	} else if (!tfs_strcmp(cstr, "name")) {
+	} else if (str == "name") {
 		return ITEM_ATTRIBUTE_NAME;
-	} else if (!tfs_strcmp(cstr, "article")) {
+	} else if (str == "article") {
 		return ITEM_ATTRIBUTE_ARTICLE;
-	} else if (!tfs_strcmp(cstr, "pluralname")) {
+	} else if (str == "pluralname") {
 		return ITEM_ATTRIBUTE_PLURALNAME;
-	} else if (!tfs_strcmp(cstr, "weight")) {
+	} else if (str == "weight") {
 		return ITEM_ATTRIBUTE_WEIGHT;
-	} else if (!tfs_strcmp(cstr, "attack")) {
+	} else if (str == "attack") {
 		return ITEM_ATTRIBUTE_ATTACK;
-	} else if (!tfs_strcmp(cstr, "defense")) {
+	} else if (str == "defense") {
 		return ITEM_ATTRIBUTE_DEFENSE;
-	} else if (!tfs_strcmp(cstr, "extradefense")) {
+	} else if (str == "extradefense") {
 		return ITEM_ATTRIBUTE_EXTRADEFENSE;
-	} else if (!tfs_strcmp(cstr, "armor")) {
+	} else if (str == "armor") {
 		return ITEM_ATTRIBUTE_ARMOR;
-	} else if (!tfs_strcmp(cstr, "hitchance")) {
+	} else if (str == "hitchance") {
 		return ITEM_ATTRIBUTE_HITCHANCE;
-	} else if (!tfs_strcmp(cstr, "shootrange")) {
+	} else if (str == "shootrange") {
 		return ITEM_ATTRIBUTE_SHOOTRANGE;
-	} else if (!tfs_strcmp(cstr, "owner")) {
+	} else if (str == "owner") {
 		return ITEM_ATTRIBUTE_OWNER;
-	} else if (!tfs_strcmp(cstr, "duration")) {
+	} else if (str == "duration") {
 		return ITEM_ATTRIBUTE_DURATION;
-	} else if (!tfs_strcmp(cstr, "decaystate")) {
+	} else if (str == "decaystate") {
 		return ITEM_ATTRIBUTE_DECAYSTATE;
-	} else if (!tfs_strcmp(cstr, "corpseowner")) {
+	} else if (str == "corpseowner") {
 		return ITEM_ATTRIBUTE_CORPSEOWNER;
-	} else if (!tfs_strcmp(cstr, "charges")) {
+	} else if (str == "charges") {
 		return ITEM_ATTRIBUTE_CHARGES;
-	} else if (!tfs_strcmp(cstr, "fluidtype")) {
+	} else if (str == "fluidtype") {
 		return ITEM_ATTRIBUTE_FLUIDTYPE;
-	} else if (!tfs_strcmp(cstr, "doorid")) {
+	} else if (str == "doorid") {
 		return ITEM_ATTRIBUTE_DOORID;
 	}
 	return ITEM_ATTRIBUTE_NONE;
@@ -1415,6 +1068,9 @@ std::string getFirstLine(const std::string& str)
 const char* getReturnMessage(ReturnValue value)
 {
 	switch (value) {
+		case RETURNVALUE_REWARDCHESTISEMPTY:
+			return "The chest is currently empty. You did not take part in any battles in the last seven days or already claimed your reward.";
+
 		case RETURNVALUE_DESTINATIONOUTOFREACH:
 			return "Destination is out of reach.";
 
@@ -1593,6 +1249,9 @@ const char* getReturnMessage(ReturnValue value)
 		case RETURNVALUE_YOUARENOTTHEOWNER:
 			return "You are not the owner.";
 
+		case RETURNVALUE_YOUCANTOPENCORPSEADM:
+			return "You can't open this corpse, because you are an Admin.";
+
 		case RETURNVALUE_NOSUCHRAIDEXISTS:
 			return "No such raid exists.";
 
@@ -1614,6 +1273,33 @@ const char* getReturnMessage(ReturnValue value)
 		case RETURNVALUE_YOUCANNOTTRADETHISHOUSE:
 			return "You can not trade this house.";
 
+		case RETURNVALUE_NOTENOUGHFISTLEVEL:
+			return "You do not have enough fist level";
+
+		case RETURNVALUE_NOTENOUGHCLUBLEVEL:
+			return "You do not have enough club level";
+
+		case RETURNVALUE_NOTENOUGHSWORDLEVEL:
+			return "You do not have enough sword level";
+
+		case RETURNVALUE_NOTENOUGHAXELEVEL:
+			return "You do not have enough axe level";
+
+		case RETURNVALUE_NOTENOUGHDISTANCELEVEL:
+			return "You do not have enough distance level";
+
+		case RETURNVALUE_NOTENOUGHSHIELDLEVEL:
+			return "You do not have enough shielding level";
+
+		case RETURNVALUE_NOTENOUGHFISHLEVEL:
+			return "You do not have enough fishing level";
+			
+		case RETURNVALUE_YOUCANNOTPASSTHROUGHAGGRESSIVEPLAYERS:
+			return "You cannot pass players that are aggressive against.";
+
+		case RETURNVALUE_YOUCANNOTPASSTHROUGHAGGRESSIVECREATURES:
+			return "You cannot pass creatures that are aggressive against.";
+
 		default: // RETURNVALUE_NOTPOSSIBLE, etc
 			return "Sorry, not possible.";
 	}
@@ -1627,71 +1313,81 @@ int64_t OTSYS_TIME()
 SpellGroup_t stringToSpellGroup(std::string value)
 {
 	std::string tmpStr = asLowerCaseString(value);
-	if (!tfs_strcmp(tmpStr.c_str(), "attack") || !tfs_strcmp(tmpStr.c_str(), "1")) {
+	if (tmpStr == "attack" || tmpStr == "1") {
 		return SPELLGROUP_ATTACK;
-	} else if (!tfs_strcmp(tmpStr.c_str(), "healing") || !tfs_strcmp(tmpStr.c_str(), "2")) {
+	} else if (tmpStr == "healing" || tmpStr == "2") {
 		return SPELLGROUP_HEALING;
-	} else if (!tfs_strcmp(tmpStr.c_str(), "support") || !tfs_strcmp(tmpStr.c_str(), "3")) {
+	} else if (tmpStr == "support" || tmpStr == "3") {
 		return SPELLGROUP_SUPPORT;
-	} else if (!tfs_strcmp(tmpStr.c_str(), "special") || !tfs_strcmp(tmpStr.c_str(), "4")) {
+	} else if (tmpStr == "special" || tmpStr == "4") {
 		return SPELLGROUP_SPECIAL;
 	}
+
 	return SPELLGROUP_NONE;
 }
 
-#if defined(__SSE4_2__)
-int tfs_strncmp(const char* s1, const char* s2, size_t n)
+/**
+ * @authors jlcvp, acmh
+ * @details
+ * capitalize the first letter of every word in source
+ * @param source
+ */
+void capitalizeWords(std::string& source)
 {
-	__m128i* ptr1 = reinterpret_cast<__m128i*>(const_cast<char*>(s1));
-	__m128i* ptr2 = reinterpret_cast<__m128i*>(const_cast<char*>(s2));
-
-	const uint8_t mode = (_SIDD_UBYTE_OPS | _SIDD_CMP_EQUAL_EACH | _SIDD_NEGATIVE_POLARITY | _SIDD_LEAST_SIGNIFICANT);
-	for (; n != 0; ++ptr1, ++ptr2) {
-		const __m128i a = _mm_loadu_si128(ptr1);
-		const __m128i b = _mm_loadu_si128(ptr2);
-		if (_mm_cmpestrc(a, n, b, n, mode)) {
-			const auto idx = _mm_cmpestri(a, n, b, n, mode);
-
-			const uint8_t b1 = (reinterpret_cast<char*>(ptr1))[idx];
-			const uint8_t b2 = (reinterpret_cast<char*>(ptr2))[idx];
-			if (b1 < b2) {
-				return -1;
-			} else if (b1 > b2) {
-				return 1;
-			} else {
-				return 0;
-			}
-		}
-		n = (n > 16 ? n - 16 : 0);
-	}
-	return 0;
-}
-
-int tfs_strcmp(const char* s1, const char* s2)
-{
-	__m128i* ptr1 = reinterpret_cast<__m128i*>(const_cast<char*>(s1));
-	__m128i* ptr2 = reinterpret_cast<__m128i*>(const_cast<char*>(s2));
-
-	const uint8_t mode = (_SIDD_UBYTE_OPS | _SIDD_CMP_EQUAL_EACH | _SIDD_NEGATIVE_POLARITY | _SIDD_LEAST_SIGNIFICANT);
-	for (; ; ++ptr1, ++ptr2) {
-		const __m128i a = _mm_loadu_si128(ptr1);
-		const __m128i b = _mm_loadu_si128(ptr2);
-		if (_mm_cmpistrc(a, b, mode)) {
-			const auto idx = _mm_cmpistri(a, b, mode);
-
-			const uint8_t b1 = (reinterpret_cast<char*>(ptr1))[idx];
-			const uint8_t b2 = (reinterpret_cast<char*>(ptr2))[idx];
-			if (b1 < b2) {
-				return -1;
-			} else if (b1 > b2) {
-				return 1;
-			} else {
-				return 0;
-			}
-		} else if (_mm_cmpistrz(a, b, mode)) {
-			break;
+	toLowerCaseString(source);
+	uint8_t size = (uint8_t) source.size();
+	for(uint8_t i=0; i< size; i++) {
+		if(i==0) {
+			source[i] = (char)toupper(source[i]);
+		} else if(source[i-1] == ' ' || source[i-1] == '\'') {
+			source[i] = (char)toupper(source[i]);
 		}
 	}
-	return 0;
 }
-#endif
+
+NameEval_t validateName(const std::string &name)
+{
+
+	StringVector prohibitedWords = {"owner", "gamemaster", "hoster", "admin", "staff", "tibia", "account", "god", "anal", "ass", "fuck", "sex", "hitler", "pussy", "dick", "rape", "cm", "gm", "tutor", "counsellor", "god"};
+	StringVector toks;
+	std::regex regexValidChars("^[a-zA-Z' ]+$");
+
+	boost::split(toks, name, boost::is_any_of(" '"));
+	if(name.length()<3 || name.length()>14) {
+		return INVALID_LENGTH;
+	}
+
+	if(!std::regex_match(name, regexValidChars)) { //invalid chars in name
+		return INVALID_CHARACTER;
+	}
+
+	for(std::string str : toks) {
+		if(str.length()<2)
+			return INVALID_TOKEN_LENGTH;
+		else if(std::find(prohibitedWords.begin(), prohibitedWords.end(),str) != prohibitedWords.end()) { //searching for prohibited words
+			return INVALID_FORBIDDEN;
+		}
+	}
+
+	return VALID;
+}
+bool isCaskItem(uint16_t itemId)
+{
+	return (itemId >= ITEM_HEALTH_CASK_START && itemId <= ITEM_HEALTH_CASK_END) || 
+		(itemId >= ITEM_MANA_CASK_START && itemId <= ITEM_MANA_CASK_END) || 
+		(itemId >= ITEM_SPIRIT_CASK_START && itemId <= ITEM_SPIRIT_CASK_END);
+}
+
+uint16_t getPvpItem(uint16_t itemId, bool isPvp)
+{
+	switch (itemId) {
+	case ITEM_MAGICWALL: case ITEM_MAGICWALL_NOPVP: return isPvp ? ITEM_MAGICWALL : ITEM_MAGICWALL_NOPVP;
+	case ITEM_WILDGROWTH: case ITEM_WILDGROWTH_NOPVP: return isPvp ? ITEM_WILDGROWTH : ITEM_WILDGROWTH_NOPVP;
+	case ITEM_ENERGYFIELD_PVP: case ITEM_ENERGYFIELD_NOPVP: return isPvp ? ITEM_ENERGYFIELD_PVP : ITEM_ENERGYFIELD_NOPVP;
+	case ITEM_FIREFIELD_PVP_FULL: case ITEM_FIREFIELD_NOPVP_FULL: return isPvp ? ITEM_FIREFIELD_PVP_FULL : ITEM_FIREFIELD_NOPVP_FULL;
+	case ITEM_FIREFIELD_PVP_MEDIUM: case ITEM_FIREFIELD_NOPVP_MEDIUM: return isPvp ? ITEM_FIREFIELD_PVP_MEDIUM : ITEM_FIREFIELD_NOPVP_MEDIUM;
+	case ITEM_FIREFIELD_PVP_SMALL: case ITEM_FIREFIELD_NOPVP_SMALL: return isPvp ? ITEM_FIREFIELD_PVP_SMALL : ITEM_FIREFIELD_NOPVP_SMALL;
+	case ITEM_POISONFIELD_PVP: case ITEM_POISONFIELD_NOPVP: return isPvp ? ITEM_POISONFIELD_PVP : ITEM_POISONFIELD_NOPVP;
+	}
+	return 0x00;
+}
